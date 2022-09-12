@@ -57,3 +57,33 @@ impl std::fmt::Display for DocumentReference {
         write!(f, "{}/{}", self.0.parent, self.0.id)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn collection_reference() {
+        assert_eq!(CollectionReference::new("users").to_string(), "users");
+    }
+
+    #[test]
+    fn document_reference() {
+        assert_eq!(
+            CollectionReference::new("users").doc("alice").to_string(),
+            "users/alice"
+        );
+    }
+
+    #[test]
+    fn many_nested() {
+        assert_eq!(
+            CollectionReference::new("planets")
+                .doc("tatooine")
+                .collection("people")
+                .doc("luke")
+                .to_string(),
+            "planets/tatooine/people/luke"
+        );
+    }
+}

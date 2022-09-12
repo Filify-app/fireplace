@@ -1,4 +1,4 @@
-mod firestore;
+pub mod firestore;
 
 #[cfg(test)]
 mod tests {
