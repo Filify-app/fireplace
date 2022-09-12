@@ -1,3 +1,5 @@
+mod firestore;
+
 #[cfg(test)]
 mod tests {
     #[test]
