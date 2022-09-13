@@ -1,5 +1,3 @@
-use std::fmt::Display;
-
 use firestore_grpc::v1::Document;
 use serde::{
     ser::{self, SerializeMap},
@@ -11,23 +9,6 @@ pub struct FirestoreDocument(Document);
 impl FirestoreDocument {
     pub(crate) fn new(doc: Document) -> Self {
         Self(doc)
-    }
-}
-
-#[derive(Debug)]
-pub struct SerializeError(anyhow::Error);
-
-impl std::error::Error for SerializeError {}
-
-impl Display for SerializeError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "failed to serialize document: {}", self.0)
-    }
-}
-
-impl ser::Error for SerializeError {
-    fn custom<T: Display>(msg: T) -> Self {
-        SerializeError(anyhow::anyhow!(msg.to_string()))
     }
 }
 
