@@ -10,7 +10,7 @@ use firestore_grpc::{
 };
 use serde::{Deserialize, Serialize};
 
-use crate::firestore::FirestoreDocument;
+use crate::firestore::serde::deserialize_firestore_document;
 
 use super::reference::DocumentReference;
 
@@ -64,14 +64,30 @@ impl FirestoreClient {
 
         let res = self.client.get_document(request).await;
 
-        #[derive(Serialize, Deserialize)]
+        // TODO: convert this stuff to a bunch of tests
+        #[derive(Debug, Serialize, Deserialize)]
         struct TestLulw {
             truthy: bool,
             message: String,
+            idk: Option<String>,
+            non_exist: Option<String>,
+            mappy: MappyStuff,
+            listy: Vec<MappyStuff>,
         }
 
-        let doc = FirestoreDocument::new(res.unwrap().into_inner());
+        #[derive(Debug, Serialize, Deserialize)]
+        struct MappyStuff {
+            hey: String,
+        }
 
-        dbg!(serde_json::to_string(&doc).unwrap());
+        let doc = res.unwrap().into_inner();
+
+        dbg!(&doc);
+
+        let res: TestLulw = deserialize_firestore_document(doc).unwrap();
+        // TODO: do this as a test just to flex the generic stuff and type system
+        // let res: serde_json::Value = from_grpc_document(doc).unwrap();
+
+        dbg!(res);
     }
 }
