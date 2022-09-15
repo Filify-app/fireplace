@@ -204,7 +204,10 @@ impl<'de> de::Deserializer<'de> for FirestoreValueDeserializer {
     where
         V: Visitor<'de>,
     {
-        self.deserialize_any(visitor)
+        match self.value {
+            ValueType::NullValue(_) => visitor.visit_none(),
+            _ => visitor.visit_some(self),
+        }
     }
 
     fn deserialize_unit<V>(self, visitor: V) -> Result<V::Value, Self::Error>
@@ -404,5 +407,127 @@ impl<'de> SeqAccess<'de> for ArrayDeserializer {
 
     fn size_hint(&self) -> Option<usize> {
         Some(self.len)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::HashMap;
+
+    use firestore_grpc::v1::{value::ValueType, ArrayValue, Document, MapValue, Value};
+    use prost_types::Timestamp;
+    use serde::Deserialize;
+
+    use super::deserialize_firestore_document;
+
+    #[test]
+    fn general_deserialize() {
+        let doc = Document {
+            name: String::from("projects/project-id/databases/(default)/documents/people/luke"),
+            fields: HashMap::from_iter(vec![
+                (
+                    "planetsVisited".to_string(),
+                    Value {
+                        value_type: Some(ValueType::ArrayValue(ArrayValue {
+                            values: vec![Value {
+                                value_type: Some(ValueType::MapValue(MapValue {
+                                    fields: HashMap::from_iter(vec![(
+                                        "name".to_string(),
+                                        Value {
+                                            value_type: Some(ValueType::StringValue(
+                                                "Tatooine".to_string(),
+                                            )),
+                                        },
+                                    )]),
+                                })),
+                            }],
+                        })),
+                    },
+                ),
+                (
+                    "isJedi".to_string(),
+                    Value {
+                        value_type: Some(ValueType::BooleanValue(true)),
+                    },
+                ),
+                (
+                    "name".to_string(),
+                    Value {
+                        value_type: Some(ValueType::StringValue("Luke Skywalker".to_string())),
+                    },
+                ),
+                (
+                    "hands".to_string(),
+                    Value {
+                        value_type: Some(ValueType::MapValue(MapValue {
+                            fields: HashMap::from_iter(vec![
+                                (
+                                    "left".to_string(),
+                                    Value {
+                                        value_type: Some(ValueType::StringValue(
+                                            "lefty".to_string(),
+                                        )),
+                                    },
+                                ),
+                                (
+                                    "right".to_string(),
+                                    Value {
+                                        value_type: Some(ValueType::NullValue(0)),
+                                    },
+                                ),
+                            ]),
+                        })),
+                    },
+                ),
+            ]),
+            create_time: Some(Timestamp {
+                seconds: 1663061252,
+                nanos: 979420000,
+            }),
+            update_time: Some(Timestamp {
+                seconds: 1663183882,
+                nanos: 194659000,
+            }),
+        };
+
+        #[derive(Debug, Deserialize, PartialEq)]
+        struct Person {
+            name: String,
+            #[serde(rename = "isJedi")]
+            is_jedi: bool,
+            #[serde(rename = "planetsVisited")]
+            planets_visited: Vec<Planet>,
+            hands: Hands,
+            faith: Option<String>,
+        }
+
+        #[derive(Debug, Deserialize, PartialEq)]
+        struct Planet {
+            name: String,
+        }
+
+        #[derive(Debug, Deserialize, PartialEq)]
+        struct Hands {
+            left: Option<String>,
+            right: Option<String>,
+        }
+
+        let person: Person = deserialize_firestore_document(doc).unwrap();
+
+        assert_eq!(
+            person,
+            Person {
+                name: "Luke Skywalker".to_string(),
+                is_jedi: true,
+                planets_visited: vec![Planet {
+                    name: "Tatooine".to_string(),
+                }],
+                hands: Hands {
+                    left: Some("lefty".to_string()),
+                    right: None,
+                },
+                faith: None,
+            }
+        );
     }
 }
