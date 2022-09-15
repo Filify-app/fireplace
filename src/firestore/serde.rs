@@ -75,7 +75,6 @@ impl<'de> de::Deserializer<'de> for FirestoreValueDeserializer {
             StringValue(s) => visitor.visit_str(&s),
             MapValue(m) => visitor.visit_map(MapDeserializer::new(m)),
             ArrayValue(a) => visitor.visit_seq(ArrayDeserializer::new(a)),
-            BytesValue(b) => visitor.visit_bytes(&b),
             TimestampValue(t) => visitor.visit_i64(t.seconds),
             ReferenceValue(r) => visitor.visit_str(&r),
             BytesValue(_) => Err(Error::Message(
@@ -423,8 +422,13 @@ mod tests {
 
     use super::deserialize_firestore_document;
 
+    const RANDOM_TIMESTAMP: Option<Timestamp> = Some(Timestamp {
+        seconds: 1663061252,
+        nanos: 979420000,
+    });
+
     #[test]
-    fn general_deserialize() {
+    fn deserialize_nested_maps_and_arrays() {
         let doc = Document {
             name: String::from("projects/project-id/databases/(default)/documents/people/luke"),
             fields: HashMap::from_iter(vec![
@@ -483,14 +487,8 @@ mod tests {
                     },
                 ),
             ]),
-            create_time: Some(Timestamp {
-                seconds: 1663061252,
-                nanos: 979420000,
-            }),
-            update_time: Some(Timestamp {
-                seconds: 1663183882,
-                nanos: 194659000,
-            }),
+            create_time: RANDOM_TIMESTAMP,
+            update_time: RANDOM_TIMESTAMP,
         };
 
         #[derive(Debug, Deserialize, PartialEq)]
@@ -531,6 +529,128 @@ mod tests {
                 },
                 faith: None,
             }
+        );
+    }
+
+    fn create_simple_document(key: &str, val: ValueType) -> Document {
+        Document {
+            name: String::from("projects/project-id/databases/(default)/documents/people/luke"),
+            fields: HashMap::from_iter(vec![(
+                key.to_string(),
+                Value {
+                    value_type: Some(val),
+                },
+            )]),
+            create_time: RANDOM_TIMESTAMP,
+            update_time: RANDOM_TIMESTAMP,
+        }
+    }
+
+    #[test]
+    fn deserialize_integer_field() {
+        let doc = create_simple_document("age", ValueType::IntegerValue(20));
+        let result: serde_json::Value = deserialize_firestore_document(doc).unwrap();
+        assert_eq!(result, serde_json::json!({ "age": 20 }));
+    }
+
+    #[test]
+    fn deserialize_double_field() {
+        let doc = create_simple_document("score", ValueType::DoubleValue(32.5089));
+        let result: serde_json::Value = deserialize_firestore_document(doc).unwrap();
+        assert_eq!(result, serde_json::json!({ "score": 32.5089 }));
+    }
+
+    #[test]
+    fn deserialize_string_field() {
+        let doc =
+            create_simple_document("topping", ValueType::StringValue("Pepperoni".to_string()));
+        let result: serde_json::Value = deserialize_firestore_document(doc).unwrap();
+        assert_eq!(result, serde_json::json!({ "topping": "Pepperoni" }));
+    }
+
+    #[test]
+    fn deserialize_null_field() {
+        let doc = create_simple_document("right_hand", ValueType::NullValue(1337));
+        let result: serde_json::Value = deserialize_firestore_document(doc).unwrap();
+        assert_eq!(result, serde_json::json!({ "right_hand": null }));
+    }
+
+    #[test]
+    fn deserialize_boolean_field() {
+        let doc = create_simple_document("is_too_old", ValueType::BooleanValue(false));
+        let result: serde_json::Value = deserialize_firestore_document(doc).unwrap();
+        assert_eq!(result, serde_json::json!({ "is_too_old": false }));
+    }
+
+    #[test]
+    fn deserialize_integer_as_float_succeeds() {
+        let doc = create_simple_document("price", ValueType::IntegerValue(32));
+
+        #[derive(Debug, Deserialize, PartialEq)]
+        struct Pizza {
+            price: f64,
+        }
+
+        let result: Pizza = deserialize_firestore_document(doc).unwrap();
+        assert_eq!(result, Pizza { price: 32.0 });
+    }
+
+    #[test]
+    fn deserialize_double_as_int_fails() {
+        let doc = create_simple_document("price", ValueType::DoubleValue(32.0));
+
+        #[derive(Debug, Deserialize, PartialEq)]
+        struct Pizza {
+            price: i64,
+        }
+
+        let result: Result<Pizza, super::Error> = deserialize_firestore_document(doc);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn deserialize_field_not_present_yields_none() {
+        let doc = Document {
+            name: String::from("projects/project-id/databases/(default)/documents/people/luke"),
+            fields: HashMap::new(),
+            create_time: RANDOM_TIMESTAMP,
+            update_time: RANDOM_TIMESTAMP,
+        };
+
+        #[derive(Debug, Deserialize, PartialEq)]
+        struct Pizza {
+            sale_pct: Option<f64>,
+        }
+
+        let result: Pizza = deserialize_firestore_document(doc).unwrap();
+        assert_eq!(result, Pizza { sale_pct: None });
+    }
+
+    #[test]
+    fn deserialize_timestamp_field_returns_seconds() {
+        let doc = create_simple_document(
+            "timestamp",
+            ValueType::TimestampValue(Timestamp {
+                seconds: 1234567890,
+                nanos: 123456789,
+            }),
+        );
+
+        let result: serde_json::Value = deserialize_firestore_document(doc).unwrap();
+        assert_eq!(result, serde_json::json!({ "timestamp": 1234567890 }));
+    }
+
+    #[test]
+    fn deserialize_reference_field() {
+        let doc = create_simple_document(
+            "topping_reference",
+            ValueType::ReferenceValue("projects/pizzaproject/databases/(default)/documents/pizzas/hawaii/toppings/pineapple".to_string()),
+        );
+
+        let result: serde_json::Value = deserialize_firestore_document(doc).unwrap();
+        assert_eq!(
+            result,
+            serde_json::json!({ "topping_reference": "projects/pizzaproject/databases/(default)/documents/pizzas/hawaii/toppings/pineapple" })
         );
     }
 }
