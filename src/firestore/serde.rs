@@ -78,8 +78,11 @@ impl<'de> de::Deserializer<'de> for FirestoreValueDeserializer {
             BytesValue(b) => visitor.visit_bytes(&b),
             TimestampValue(t) => visitor.visit_i64(t.seconds),
             ReferenceValue(r) => visitor.visit_str(&r),
+            BytesValue(_) => Err(Error::Message(
+                "deserialization of bytes is not implemented in this library".to_string(),
+            )),
             GeoPointValue(_) => Err(Error::Message(
-                "Deserialization of GeoPoints is not implemented in this library".to_string(),
+                "deserialization of GeoPoints is not implemented in this library".to_string(),
             )),
         }
     }
