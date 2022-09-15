@@ -75,11 +75,12 @@ impl<'de> de::Deserializer<'de> for FirestoreValueDeserializer {
             StringValue(s) => visitor.visit_str(&s),
             MapValue(m) => visitor.visit_map(MapDeserializer::new(m)),
             ArrayValue(a) => visitor.visit_seq(ArrayDeserializer::new(a)),
-            // TODO: remaining variants
-            TimestampValue(_) => todo!(),
-            ReferenceValue(_) => todo!(),
-            BytesValue(_) => todo!(),
-            GeoPointValue(_) => todo!(),
+            BytesValue(b) => visitor.visit_bytes(&b),
+            TimestampValue(t) => visitor.visit_i64(t.seconds),
+            ReferenceValue(r) => visitor.visit_str(&r),
+            GeoPointValue(_) => Err(Error::Message(
+                "Deserialization of GeoPoints is not implemented in this library".to_string(),
+            )),
         }
     }
 
