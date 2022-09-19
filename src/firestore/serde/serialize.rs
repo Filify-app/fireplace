@@ -188,12 +188,12 @@ impl Serializer for FirestoreValueSerializer {
 
     fn serialize_tuple_variant(
         self,
-        name: &'static str,
+        _name: &'static str,
         _variant_index: u32,
-        _variant: &'static str,
+        variant: &'static str,
         len: usize,
     ) -> Result<Self::SerializeTupleVariant, Self::Error> {
-        Ok(TupleVariantSerializer::new(name, len))
+        Ok(TupleVariantSerializer::new(variant, len))
     }
 
     fn serialize_map(self, len: Option<usize>) -> Result<Self::SerializeMap, Self::Error> {
@@ -503,7 +503,7 @@ impl SerializeTuple for TupleSerializer {
 mod tests {
     use std::collections::HashMap;
 
-    use firestore_grpc::v1::{value::ValueType, Document, MapValue, Value};
+    use firestore_grpc::v1::{value::ValueType, ArrayValue, Document, MapValue, Value};
     use serde::Serialize;
 
     use crate::firestore::serde::serialize_to_document;
@@ -615,6 +615,197 @@ mod tests {
                         },
                     )
                 ]),
+                create_time: None,
+                update_time: None,
+            }
+        );
+    }
+
+    #[test]
+    fn serialize_map() {
+        let value: HashMap<&str, i32> = HashMap::from_iter([("Pep med drez", 65)]);
+        let doc = serialize_to_document(&value, DOC_NAME.to_string(), None, None).unwrap();
+
+        assert_eq!(
+            doc,
+            Document {
+                name: String::from(DOC_NAME),
+                fields: HashMap::from_iter(vec![(
+                    String::from("Pep med drez"),
+                    Value {
+                        value_type: Some(ValueType::IntegerValue(65)),
+                    },
+                ),]),
+                create_time: None,
+                update_time: None,
+            }
+        );
+    }
+
+    #[test]
+    fn serialize_tuple_variant() {
+        #[derive(Serialize)]
+        #[serde(rename_all = "lowercase")]
+        enum TestTupleVariant {
+            Pepperoni(i32, &'static str),
+        }
+
+        #[derive(Serialize)]
+        struct TestStruct {
+            pizza: TestTupleVariant,
+        }
+
+        let value = TestStruct {
+            pizza: TestTupleVariant::Pepperoni(65, "Pep med drez"),
+        };
+        let doc = serialize_to_document(&value, DOC_NAME.to_string(), None, None).unwrap();
+
+        assert_eq!(
+            doc,
+            Document {
+                name: String::from(DOC_NAME),
+                fields: HashMap::from_iter(vec![(
+                    String::from("pizza"),
+                    Value {
+                        value_type: Some(ValueType::MapValue(MapValue {
+                            fields: HashMap::from_iter(vec![(
+                                String::from("pepperoni"),
+                                Value {
+                                    value_type: Some(ValueType::ArrayValue(ArrayValue {
+                                        values: vec![
+                                            Value {
+                                                value_type: Some(ValueType::IntegerValue(65)),
+                                            },
+                                            Value {
+                                                value_type: Some(ValueType::StringValue(
+                                                    String::from("Pep med drez")
+                                                )),
+                                            }
+                                        ],
+                                    }))
+                                },
+                            ),]),
+                        }))
+                    },
+                )]),
+                create_time: None,
+                update_time: None,
+            }
+        );
+    }
+
+    #[test]
+    fn serialize_tuple_struct() {
+        #[derive(Serialize)]
+        struct TestTupleStruct(&'static str, i32);
+
+        #[derive(Serialize)]
+        struct TestStruct {
+            pizza: TestTupleStruct,
+        }
+
+        let value = TestStruct {
+            pizza: TestTupleStruct("Pep med drez", 65),
+        };
+        let doc = serialize_to_document(&value, DOC_NAME.to_string(), None, None).unwrap();
+
+        assert_eq!(
+            doc,
+            Document {
+                name: String::from(DOC_NAME),
+                fields: HashMap::from_iter(vec![(
+                    String::from("pizza"),
+                    Value {
+                        value_type: Some(ValueType::ArrayValue(ArrayValue {
+                            values: vec![
+                                Value {
+                                    value_type: Some(ValueType::StringValue(String::from(
+                                        "Pep med drez"
+                                    ))),
+                                },
+                                Value {
+                                    value_type: Some(ValueType::IntegerValue(65)),
+                                },
+                            ],
+                        }))
+                    },
+                )]),
+                create_time: None,
+                update_time: None,
+            }
+        );
+    }
+
+    #[test]
+    fn serialize_tuple() {
+        #[derive(Serialize)]
+        struct TestStruct {
+            pizza: (&'static str, i32),
+        }
+
+        let value = TestStruct {
+            pizza: ("Pep med drez", 65),
+        };
+        let doc = serialize_to_document(&value, DOC_NAME.to_string(), None, None).unwrap();
+
+        assert_eq!(
+            doc,
+            Document {
+                name: String::from(DOC_NAME),
+                fields: HashMap::from_iter(vec![(
+                    String::from("pizza"),
+                    Value {
+                        value_type: Some(ValueType::ArrayValue(ArrayValue {
+                            values: vec![
+                                Value {
+                                    value_type: Some(ValueType::StringValue(String::from(
+                                        "Pep med drez"
+                                    ))),
+                                },
+                                Value {
+                                    value_type: Some(ValueType::IntegerValue(65)),
+                                },
+                            ],
+                        }))
+                    },
+                )]),
+                create_time: None,
+                update_time: None,
+            }
+        );
+    }
+
+    #[test]
+    fn serialize_seq() {
+        #[derive(Serialize)]
+        struct TestStruct {
+            toppings: Vec<&'static str>,
+        }
+
+        let value = TestStruct {
+            toppings: vec!["pep", "drez"],
+        };
+        let doc = serialize_to_document(&value, DOC_NAME.to_string(), None, None).unwrap();
+
+        assert_eq!(
+            doc,
+            Document {
+                name: String::from(DOC_NAME),
+                fields: HashMap::from_iter(vec![(
+                    String::from("toppings"),
+                    Value {
+                        value_type: Some(ValueType::ArrayValue(ArrayValue {
+                            values: vec![
+                                Value {
+                                    value_type: Some(ValueType::StringValue(String::from("pep"))),
+                                },
+                                Value {
+                                    value_type: Some(ValueType::StringValue(String::from("drez"))),
+                                }
+                            ],
+                        }))
+                    },
+                )]),
                 create_time: None,
                 update_time: None,
             }
