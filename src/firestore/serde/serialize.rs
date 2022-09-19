@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use firestore_grpc::v1::{value::ValueType, ArrayValue, MapValue, Value};
 use serde::{
-    ser::{SerializeMap, SerializeSeq},
+    ser::{SerializeMap, SerializeSeq, SerializeStruct},
     Serialize, Serializer,
 };
 
@@ -25,7 +25,7 @@ impl Serializer for FirestoreValueSerializer {
     type SerializeTupleStruct;
     type SerializeTupleVariant;
     type SerializeMap = MapSerializer;
-    type SerializeStruct;
+    type SerializeStruct = StructSerializer;
     type SerializeStructVariant;
 
     fn serialize_bool(self, v: bool) -> Result<Self::Ok, Self::Error> {
@@ -262,6 +262,47 @@ impl SerializeMap for MapSerializer {
         let value_type = serialize(value)?;
         self.fields.insert(
             key,
+            Value {
+                value_type: Some(value_type),
+            },
+        );
+        Ok(())
+    }
+
+    fn end(self) -> Result<Self::Ok, Self::Error> {
+        Ok(ValueType::MapValue(MapValue {
+            fields: self.fields,
+        }))
+    }
+}
+
+struct StructSerializer {
+    fields: HashMap<String, Value>,
+}
+
+impl StructSerializer {
+    fn new(size: Option<usize>) -> Self {
+        Self {
+            fields: match size {
+                Some(s) => HashMap::with_capacity(s),
+                None => HashMap::new(),
+            },
+        }
+    }
+}
+
+impl SerializeStruct for StructSerializer {
+    type Ok = ValueType;
+    type Error = Error;
+
+    fn serialize_field<T: ?Sized + Serialize>(
+        &mut self,
+        key: &'static str,
+        value: &T,
+    ) -> Result<(), Self::Error> {
+        let value_type = serialize(value)?;
+        self.fields.insert(
+            key.to_string(),
             Value {
                 value_type: Some(value_type),
             },
