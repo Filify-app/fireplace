@@ -1,5 +1,10 @@
-use firestore_grpc::v1::{value::ValueType, ArrayValue, Value};
-use serde::{ser::SerializeSeq, Serialize, Serializer};
+use std::collections::HashMap;
+
+use firestore_grpc::v1::{value::ValueType, ArrayValue, MapValue, Value};
+use serde::{
+    ser::{SerializeMap, SerializeSeq},
+    Serialize, Serializer,
+};
 
 use super::Error;
 
@@ -19,7 +24,7 @@ impl Serializer for FirestoreValueSerializer {
     type SerializeTuple;
     type SerializeTupleStruct;
     type SerializeTupleVariant;
-    type SerializeMap;
+    type SerializeMap = MapSerializer;
     type SerializeStruct;
     type SerializeStructVariant;
 
@@ -162,7 +167,7 @@ impl Serializer for FirestoreValueSerializer {
     }
 
     fn serialize_map(self, len: Option<usize>) -> Result<Self::SerializeMap, Self::Error> {
-        todo!()
+        Ok(MapSerializer::new(len))
     }
 
     fn serialize_struct(
@@ -182,6 +187,11 @@ impl Serializer for FirestoreValueSerializer {
     ) -> Result<Self::SerializeStructVariant, Self::Error> {
         todo!()
     }
+}
+
+fn serialize<T: ?Sized + Serialize>(value: &T) -> Result<ValueType, Error> {
+    let serializer = FirestoreValueSerializer::new();
+    value.serialize(serializer)
 }
 
 struct ArraySerializer {
@@ -204,8 +214,7 @@ impl SerializeSeq for ArraySerializer {
     type Error = Error;
 
     fn serialize_element<T: ?Sized + Serialize>(&mut self, value: &T) -> Result<(), Self::Error> {
-        let serializer = FirestoreValueSerializer::new();
-        let value_type = value.serialize(serializer)?;
+        let value_type = serialize(value)?;
         self.values.push(Value {
             value_type: Some(value_type),
         });
@@ -215,6 +224,54 @@ impl SerializeSeq for ArraySerializer {
     fn end(self) -> Result<Self::Ok, Self::Error> {
         Ok(ValueType::ArrayValue(ArrayValue {
             values: self.values,
+        }))
+    }
+}
+
+struct MapSerializer {
+    fields: HashMap<String, Value>,
+    next_key: Option<String>,
+}
+
+impl MapSerializer {
+    fn new(size: Option<usize>) -> Self {
+        Self {
+            fields: match size {
+                Some(s) => HashMap::with_capacity(s),
+                None => HashMap::new(),
+            },
+            next_key: None,
+        }
+    }
+}
+
+impl SerializeMap for MapSerializer {
+    type Ok = ValueType;
+    type Error = Error;
+
+    fn serialize_key<T: ?Sized + Serialize>(&mut self, key: &T) -> Result<(), Self::Error> {
+        self.next_key = match serialize(key)? {
+            ValueType::StringValue(s) => Some(s),
+            other => return Err(Error::InvalidKey(other)),
+        };
+        Ok(())
+    }
+
+    fn serialize_value<T: ?Sized + Serialize>(&mut self, value: &T) -> Result<(), Self::Error> {
+        let key = self.next_key.take().unwrap_or_default();
+        let value_type = serialize(value)?;
+        self.fields.insert(
+            key,
+            Value {
+                value_type: Some(value_type),
+            },
+        );
+        Ok(())
+    }
+
+    fn end(self) -> Result<Self::Ok, Self::Error> {
+        Ok(ValueType::MapValue(MapValue {
+            fields: self.fields,
         }))
     }
 }

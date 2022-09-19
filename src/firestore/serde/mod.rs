@@ -4,6 +4,7 @@ mod serialize;
 use std::fmt;
 
 pub use deserialize::*;
+use firestore_grpc::v1::value::ValueType;
 use serde::{de, ser};
 pub use serialize::*;
 
@@ -16,6 +17,7 @@ pub enum Error {
     /// This error should never surface if the Firebase API docs are correct:
     /// ["Must have a value set."](https://firebase.google.com/docs/firestore/reference/rpc/google.firestore.v1#google.firestore.v1.Value)
     MissingValueType,
+    InvalidKey(ValueType),
 }
 
 impl ser::Error for Error {
@@ -36,6 +38,7 @@ impl fmt::Display for Error {
             Self::Message(msg) => formatter.write_str(msg),
             Self::Eof => formatter.write_str("end of content"),
             Self::MissingValueType => formatter.write_str("missing value type"),
+            Self::InvalidKey(item) => write!(formatter, "invalid key type: {:?}", item),
         }
     }
 }
