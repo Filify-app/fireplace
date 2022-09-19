@@ -66,7 +66,7 @@ impl FirestoreClient {
     /// # #[tokio::main]
     /// # async fn main() {
     /// # use firebase_admin_rs::firestore::{client::FirestoreClient, reference::CollectionReference};
-    /// # use serde::Deserialize;
+    /// # use serde::{Serialize, Deserialize};
     /// # let mut client = FirestoreClient::initialise(
     /// #     &std::env::var("PROJECT_ID").unwrap(),
     /// #     &std::env::var("TOKEN").unwrap(),
@@ -74,13 +74,21 @@ impl FirestoreClient {
     /// # .await
     /// # .unwrap();
     /// #
-    /// #[derive(Debug, Deserialize, PartialEq)]
+    /// #[derive(Debug, Serialize, Deserialize, PartialEq)]
     /// struct Person {
     ///    name: String,
     /// }
     ///
-    /// // This document exists in the database.
-    /// let doc_ref = CollectionReference::new("people").doc("luke");
+    /// let collection_ref = CollectionReference::new("people");
+    ///
+    /// // First we create the document in the database
+    /// let doc_id = client
+    ///    .create_document(&collection_ref, None, &Person { name: "Luke Skywalker".to_string() })
+    ///    .await
+    ///    .unwrap();
+    ///
+    /// // Then we can retrieve it
+    /// let doc_ref = collection_ref.doc(doc_id);
     /// let doc = client
     ///     .get_document(&doc_ref)
     ///     .await
@@ -91,7 +99,7 @@ impl FirestoreClient {
     ///     Some(Person { name: "Luke Skywalker".to_string() })
     /// );
     ///
-    /// // This document doesn't exist in the database.
+    /// // This document doesn't exist in the database, so we get a None.
     /// let doc_ref = CollectionReference::new("people").doc("luke-right-hand");
     /// let doc = client
     ///     .get_document::<Person>(&doc_ref)
