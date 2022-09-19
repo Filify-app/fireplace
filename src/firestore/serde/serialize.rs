@@ -106,14 +106,14 @@ impl Serializer for FirestoreValueSerializer {
         Ok(ValueType::NullValue(0))
     }
 
-    fn serialize_unit_struct(self, name: &'static str) -> Result<Self::Ok, Self::Error> {
+    fn serialize_unit_struct(self, _name: &'static str) -> Result<Self::Ok, Self::Error> {
         self.serialize_unit()
     }
 
     fn serialize_unit_variant(
         self,
-        name: &'static str,
-        variant_index: u32,
+        _name: &'static str,
+        _variant_index: u32,
         variant: &'static str,
     ) -> Result<Self::Ok, Self::Error> {
         self.serialize_str(variant)
@@ -121,7 +121,7 @@ impl Serializer for FirestoreValueSerializer {
 
     fn serialize_newtype_struct<T: ?Sized>(
         self,
-        name: &'static str,
+        _name: &'static str,
         value: &T,
     ) -> Result<Self::Ok, Self::Error>
     where
@@ -132,15 +132,22 @@ impl Serializer for FirestoreValueSerializer {
 
     fn serialize_newtype_variant<T: ?Sized>(
         self,
-        name: &'static str,
-        variant_index: u32,
+        _name: &'static str,
+        _variant_index: u32,
         variant: &'static str,
         value: &T,
     ) -> Result<Self::Ok, Self::Error>
     where
         T: serde::Serialize,
     {
-        todo!()
+        let mut inner = HashMap::new();
+        inner.insert(
+            variant.to_string(),
+            Value {
+                value_type: Some(value.serialize(self)?),
+            },
+        );
+        Ok(ValueType::MapValue(MapValue { fields: inner }))
     }
 
     fn serialize_seq(self, len: Option<usize>) -> Result<Self::SerializeSeq, Self::Error> {
@@ -148,25 +155,25 @@ impl Serializer for FirestoreValueSerializer {
     }
 
     fn serialize_tuple(self, len: usize) -> Result<Self::SerializeTuple, Self::Error> {
-        todo!()
+        Ok(TupleSerializer::new(len))
     }
 
     fn serialize_tuple_struct(
         self,
-        name: &'static str,
+        _name: &'static str,
         len: usize,
     ) -> Result<Self::SerializeTupleStruct, Self::Error> {
-        todo!()
+        Ok(TupleStructSerializer::new(len))
     }
 
     fn serialize_tuple_variant(
         self,
         name: &'static str,
-        variant_index: u32,
-        variant: &'static str,
+        _variant_index: u32,
+        _variant: &'static str,
         len: usize,
     ) -> Result<Self::SerializeTupleVariant, Self::Error> {
-        todo!()
+        Ok(TupleVariantSerializer::new(name, len))
     }
 
     fn serialize_map(self, len: Option<usize>) -> Result<Self::SerializeMap, Self::Error> {
@@ -175,20 +182,20 @@ impl Serializer for FirestoreValueSerializer {
 
     fn serialize_struct(
         self,
-        name: &'static str,
+        _name: &'static str,
         len: usize,
     ) -> Result<Self::SerializeStruct, Self::Error> {
-        todo!()
+        Ok(StructSerializer::new(len))
     }
 
     fn serialize_struct_variant(
         self,
         name: &'static str,
-        variant_index: u32,
-        variant: &'static str,
+        _variant_index: u32,
+        _variant: &'static str,
         len: usize,
     ) -> Result<Self::SerializeStructVariant, Self::Error> {
-        todo!()
+        Ok(StructVariantSerializer::new(name, len))
     }
 }
 
@@ -284,12 +291,9 @@ struct StructSerializer {
 }
 
 impl StructSerializer {
-    fn new(size: Option<usize>) -> Self {
+    fn new(size: usize) -> Self {
         Self {
-            fields: match size {
-                Some(s) => HashMap::with_capacity(s),
-                None => HashMap::new(),
-            },
+            fields: HashMap::with_capacity(size),
         }
     }
 }
@@ -326,12 +330,9 @@ struct StructVariantSerializer {
 }
 
 impl StructVariantSerializer {
-    fn new(name: &'static str, size: Option<usize>) -> Self {
+    fn new(name: &'static str, size: usize) -> Self {
         Self {
-            fields: match size {
-                Some(s) => HashMap::with_capacity(s),
-                None => HashMap::new(),
-            },
+            fields: HashMap::with_capacity(size),
             name,
         }
     }
@@ -379,12 +380,9 @@ struct TupleVariantSerializer {
 }
 
 impl TupleVariantSerializer {
-    fn new(name: &'static str, size: Option<usize>) -> Self {
+    fn new(name: &'static str, len: usize) -> Self {
         Self {
-            values: match size {
-                Some(s) => Vec::with_capacity(s),
-                None => Vec::new(),
-            },
+            values: Vec::with_capacity(len),
             name,
         }
     }
@@ -424,12 +422,9 @@ struct TupleStructSerializer {
 }
 
 impl TupleStructSerializer {
-    fn new(len: Option<usize>) -> Self {
+    fn new(len: usize) -> Self {
         Self {
-            values: match len {
-                Some(l) => Vec::with_capacity(l),
-                None => Vec::new(),
-            },
+            values: Vec::with_capacity(len),
         }
     }
 }
@@ -458,12 +453,9 @@ struct TupleSerializer {
 }
 
 impl TupleSerializer {
-    fn new(len: Option<usize>) -> Self {
+    fn new(len: usize) -> Self {
         Self {
-            values: match len {
-                Some(l) => Vec::with_capacity(l),
-                None => Vec::new(),
-            },
+            values: Vec::with_capacity(len),
         }
     }
 }
