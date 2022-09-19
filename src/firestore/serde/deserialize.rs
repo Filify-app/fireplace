@@ -1,14 +1,12 @@
 use std::collections::hash_map;
-use std::fmt::{self, Display};
 use std::vec;
 
 use firestore_grpc::v1::value::ValueType;
+use serde::de::{self, Visitor};
 use serde::de::{DeserializeSeed, MapAccess, SeqAccess};
 use serde::Deserialize;
-use serde::{
-    de::{self, Visitor},
-    ser,
-};
+
+use super::Error;
 
 pub fn deserialize_firestore_document<'de, T: Deserialize<'de>>(
     doc: firestore_grpc::v1::Document,
@@ -21,38 +19,6 @@ pub fn deserialize_firestore_document<'de, T: Deserialize<'de>>(
     let result = T::deserialize(deserializer)?;
     Ok(result)
 }
-
-#[derive(Debug)]
-pub enum Error {
-    Message(String),
-    Eof,
-    // TODO: add reference to firestore docs that say this should not be possible
-    MissingValueType,
-}
-
-impl ser::Error for Error {
-    fn custom<T: Display>(msg: T) -> Self {
-        Self::Message(msg.to_string())
-    }
-}
-
-impl de::Error for Error {
-    fn custom<T: Display>(msg: T) -> Self {
-        Self::Message(msg.to_string())
-    }
-}
-
-impl Display for Error {
-    fn fmt(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
-        match self {
-            Self::Message(msg) => formatter.write_str(msg),
-            Self::Eof => formatter.write_str("end of content"),
-            Self::MissingValueType => formatter.write_str("missing value type"),
-        }
-    }
-}
-
-impl std::error::Error for Error {}
 
 struct FirestoreValueDeserializer {
     value: ValueType,
