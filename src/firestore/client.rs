@@ -1,3 +1,4 @@
+use anyhow::anyhow;
 use firestore_grpc::tonic;
 use firestore_grpc::v1::firestore_client::FirestoreClient as GrpcFirestoreClient;
 use firestore_grpc::v1::CreateDocumentRequest;
@@ -12,6 +13,7 @@ use firestore_grpc::{
 };
 use serde::{Deserialize, Serialize};
 
+use crate::error::FirebaseError;
 use crate::firestore::serde::deserialize_firestore_document;
 
 use super::reference::{CollectionReference, DocumentReference};
@@ -39,7 +41,7 @@ fn create_auth_interceptor(token: &str) -> InterceptorFunction {
 }
 
 impl FirestoreClient {
-    pub async fn initialise(project_id: &str, token: &str) -> Result<Self, anyhow::Error> {
+    pub async fn initialise(project_id: &str, token: &str) -> Result<Self, FirebaseError> {
         let endpoint =
             Channel::from_static(URL).tls_config(ClientTlsConfig::new().domain_name(DOMAIN));
 
@@ -99,7 +101,7 @@ impl FirestoreClient {
     pub async fn get_document<'de, T: Deserialize<'de>>(
         &mut self,
         doc_ref: &DocumentReference,
-    ) -> Result<Option<T>, anyhow::Error> {
+    ) -> Result<Option<T>, FirebaseError> {
         let name = format!("{}/{}", self.root_resource_path, doc_ref);
 
         let request = GetDocumentRequest {
@@ -117,7 +119,7 @@ impl FirestoreClient {
                 Ok(Some(deserialized))
             }
             Err(err) if err.code() == tonic::Code::NotFound => Ok(None),
-            Err(err) => Err(err.into()),
+            Err(err) => Err(anyhow!(err).into()),
         }
     }
 
@@ -126,7 +128,7 @@ impl FirestoreClient {
         collection_ref: &CollectionReference,
         document_id: Option<String>,
         document: &T,
-    ) -> Result<(), anyhow::Error> {
+    ) -> Result<(), FirebaseError> {
         // We should provide no name or timestamps when creating a document
         // according to Google's Firestore API reference.
         let doc = serialize_to_document(document, None, None, None)?;
@@ -141,8 +143,14 @@ impl FirestoreClient {
             mask: None,
         };
 
-        self.client.create_document(request).await?;
+        let res = self.client.create_document(request).await;
 
-        Ok(())
+        match res {
+            Ok(_) => Ok(()),
+            Err(err) if err.code() == tonic::Code::AlreadyExists => Err(
+                FirebaseError::DocumentAlreadyExists(err.message().to_string()),
+            ),
+            Err(err) => Err(anyhow!(err).into()),
+        }
     }
 }
