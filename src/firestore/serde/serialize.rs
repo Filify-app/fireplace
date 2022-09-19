@@ -811,4 +811,42 @@ mod tests {
             }
         );
     }
+
+    #[test]
+    fn serialize_option() {
+        #[derive(Serialize)]
+        struct TestStruct {
+            name: Option<&'static str>,
+            topping: Option<&'static str>,
+        }
+
+        let value = TestStruct {
+            name: Some("bread"),
+            topping: None,
+        };
+        let doc = serialize_to_document(&value, DOC_NAME.to_string(), None, None).unwrap();
+
+        assert_eq!(
+            doc,
+            Document {
+                name: String::from(DOC_NAME),
+                fields: HashMap::from_iter(vec![
+                    (
+                        String::from("name"),
+                        Value {
+                            value_type: Some(ValueType::StringValue(String::from("bread"))),
+                        },
+                    ),
+                    (
+                        String::from("topping"),
+                        Value {
+                            value_type: Some(ValueType::NullValue(0)),
+                        },
+                    )
+                ]),
+                create_time: None,
+                update_time: None,
+            }
+        );
+    }
 }
