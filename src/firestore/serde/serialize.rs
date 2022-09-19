@@ -3,7 +3,8 @@ use std::collections::HashMap;
 use firestore_grpc::v1::{value::ValueType, ArrayValue, MapValue, Value};
 use serde::{
     ser::{
-        SerializeMap, SerializeSeq, SerializeStruct, SerializeStructVariant, SerializeTupleVariant,
+        SerializeMap, SerializeSeq, SerializeStruct, SerializeStructVariant, SerializeTupleStruct,
+        SerializeTupleVariant,
     },
     Serialize, Serializer,
 };
@@ -24,7 +25,7 @@ impl Serializer for FirestoreValueSerializer {
 
     type SerializeSeq = ArraySerializer;
     type SerializeTuple;
-    type SerializeTupleStruct;
+    type SerializeTupleStruct = TupleStructSerializer;
     type SerializeTupleVariant = TupleVariantSerializer;
     type SerializeMap = MapSerializer;
     type SerializeStruct = StructSerializer;
@@ -415,5 +416,39 @@ impl SerializeTupleVariant for TupleVariantSerializer {
         );
 
         Ok(ValueType::MapValue(MapValue { fields: outer }))
+    }
+}
+
+struct TupleStructSerializer {
+    values: Vec<Value>,
+}
+
+impl TupleStructSerializer {
+    fn new(len: Option<usize>) -> Self {
+        Self {
+            values: match len {
+                Some(l) => Vec::with_capacity(l),
+                None => Vec::new(),
+            },
+        }
+    }
+}
+
+impl SerializeTupleStruct for TupleStructSerializer {
+    type Ok = ValueType;
+    type Error = Error;
+
+    fn serialize_field<T: ?Sized + Serialize>(&mut self, value: &T) -> Result<(), Self::Error> {
+        let value_type = serialize(value)?;
+        self.values.push(Value {
+            value_type: Some(value_type),
+        });
+        Ok(())
+    }
+
+    fn end(self) -> Result<Self::Ok, Self::Error> {
+        Ok(ValueType::ArrayValue(ArrayValue {
+            values: self.values,
+        }))
     }
 }
