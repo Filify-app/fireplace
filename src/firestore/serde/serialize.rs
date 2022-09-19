@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use firestore_grpc::v1::{value::ValueType, ArrayValue, MapValue, Value};
 use serde::{
-    ser::{SerializeMap, SerializeSeq, SerializeStruct},
+    ser::{SerializeMap, SerializeSeq, SerializeStruct, SerializeStructVariant},
     Serialize, Serializer,
 };
 
@@ -26,7 +26,7 @@ impl Serializer for FirestoreValueSerializer {
     type SerializeTupleVariant;
     type SerializeMap = MapSerializer;
     type SerializeStruct = StructSerializer;
-    type SerializeStructVariant;
+    type SerializeStructVariant = StructVariantSerializer;
 
     fn serialize_bool(self, v: bool) -> Result<Self::Ok, Self::Error> {
         Ok(ValueType::BooleanValue(v))
@@ -314,5 +314,58 @@ impl SerializeStruct for StructSerializer {
         Ok(ValueType::MapValue(MapValue {
             fields: self.fields,
         }))
+    }
+}
+
+struct StructVariantSerializer {
+    fields: HashMap<String, Value>,
+    name: &'static str,
+}
+
+impl StructVariantSerializer {
+    fn new(name: &'static str, size: Option<usize>) -> Self {
+        Self {
+            fields: match size {
+                Some(s) => HashMap::with_capacity(s),
+                None => HashMap::new(),
+            },
+            name,
+        }
+    }
+}
+
+impl SerializeStructVariant for StructVariantSerializer {
+    type Ok = ValueType;
+    type Error = Error;
+
+    fn serialize_field<T: ?Sized + Serialize>(
+        &mut self,
+        key: &'static str,
+        value: &T,
+    ) -> Result<(), Self::Error> {
+        let value_type = serialize(value)?;
+        self.fields.insert(
+            key.to_string(),
+            Value {
+                value_type: Some(value_type),
+            },
+        );
+        Ok(())
+    }
+
+    fn end(self) -> Result<Self::Ok, Self::Error> {
+        let inner = ValueType::MapValue(MapValue {
+            fields: self.fields,
+        });
+
+        let mut outer = HashMap::new();
+        outer.insert(
+            self.name.to_string(),
+            Value {
+                value_type: Some(inner),
+            },
+        );
+
+        Ok(ValueType::MapValue(MapValue { fields: outer }))
     }
 }
