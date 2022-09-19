@@ -1,3 +1,4 @@
+use firestore_grpc::tonic;
 use firestore_grpc::v1::firestore_client::FirestoreClient as GrpcFirestoreClient;
 use firestore_grpc::{
     tonic::{
@@ -53,7 +54,11 @@ impl FirestoreClient {
         })
     }
 
-    pub async fn get_document(&mut self, doc_ref: DocumentReference) {
+    /// Retrieve a document from Firestore at the given document reference.
+    pub async fn get_document<'de, T: Deserialize<'de>>(
+        &mut self,
+        doc_ref: &DocumentReference,
+    ) -> Result<Option<T>, anyhow::Error> {
         let name = format!("{}/{}", self.root_resource_path, doc_ref);
 
         let request = GetDocumentRequest {
@@ -64,30 +69,14 @@ impl FirestoreClient {
 
         let res = self.client.get_document(request).await;
 
-        // TODO: convert this stuff to a bunch of tests
-        #[derive(Debug, Serialize, Deserialize)]
-        struct TestLulw {
-            truthy: bool,
-            message: String,
-            idk: Option<String>,
-            non_exist: Option<String>,
-            mappy: MappyStuff,
-            listy: Vec<MappyStuff>,
+        match res {
+            Ok(res) => {
+                let doc = res.into_inner();
+                let deserialized = deserialize_firestore_document::<T>(doc)?;
+                Ok(Some(deserialized))
+            }
+            Err(err) if err.code() == tonic::Code::NotFound => Ok(None),
+            Err(err) => Err(err.into()),
         }
-
-        #[derive(Debug, Serialize, Deserialize)]
-        struct MappyStuff {
-            hey: String,
-        }
-
-        let doc = res.unwrap().into_inner();
-
-        dbg!(&doc);
-
-        let res: TestLulw = deserialize_firestore_document(doc).unwrap();
-        // TODO: do this as a test just to flex the generic stuff and type system
-        // let res: serde_json::Value = from_grpc_document(doc).unwrap();
-
-        dbg!(res);
     }
 }

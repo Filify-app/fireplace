@@ -1,4 +1,5 @@
 use firebase_admin_rs::firestore::{client::FirestoreClient, reference::CollectionReference};
+use serde::Deserialize;
 
 fn get_token() -> String {
     std::env::var("TOKEN").unwrap()
@@ -19,5 +20,12 @@ async fn main() {
 
     let doc_ref = CollectionReference::new("greetings").doc("OGkyakVCxS7X419IGqvA");
 
-    client.get_document(doc_ref).await;
+    #[derive(Debug, Deserialize)]
+    struct TestType {
+        name: String,
+    }
+
+    let doc = client.get_document::<TestType>(&doc_ref).await;
+
+    dbg!(doc);
 }
