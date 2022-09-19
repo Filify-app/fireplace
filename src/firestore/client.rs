@@ -59,6 +59,9 @@ impl FirestoreClient {
     }
 
     /// Retrieve a document from Firestore at the given document reference.
+    ///
+    /// # Examples
+    ///
     /// ```
     /// # #[tokio::main]
     /// # async fn main() {
@@ -123,6 +126,53 @@ impl FirestoreClient {
         }
     }
 
+    /// Creates a document in Firestore in the given collection. You can choose
+    /// to provide a document ID, but Firestore will generate one for you if
+    /// you don't. The ID of the created document will be returned.
+    ///
+    /// Returns an error if the document already exists.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # #[tokio::main]
+    /// # async fn main() {
+    /// # use firebase_admin_rs::error::FirebaseError;
+    /// # use firebase_admin_rs::firestore::{client::FirestoreClient, reference::CollectionReference};
+    /// # use serde::Serialize;
+    /// # let mut client = FirestoreClient::initialise(
+    /// #     &std::env::var("PROJECT_ID").unwrap(),
+    /// #     &std::env::var("TOKEN").unwrap(),
+    /// # )
+    /// # .await
+    /// # .unwrap();
+    /// #
+    /// #[derive(Debug, Serialize, PartialEq)]
+    /// struct Greeting {
+    ///     message: &'static str,
+    /// }
+    ///
+    /// let collection_ref = CollectionReference::new("greetings");
+    /// let doc_to_create = Greeting { message: "Hi Mom!" };
+    ///
+    /// // Create a document in the "greetings" collection, letting Firestore
+    /// // generate the document's ID for us.
+    /// let first_doc_id = client
+    ///     .create_document(&collection_ref, None, &doc_to_create)
+    ///     .await
+    ///     .unwrap();
+    ///
+    /// // If we create another document with the same ID, it should fail
+    /// let second_create_result = client
+    ///     .create_document(&collection_ref, Some(first_doc_id), &doc_to_create)
+    ///     .await;
+    ///
+    /// assert!(matches!(
+    ///     second_create_result.unwrap_err(),
+    ///     FirebaseError::DocumentAlreadyExists(_),
+    /// ));
+    /// # }
+    /// ```
     pub async fn create_document<'de, T: Serialize>(
         &mut self,
         collection_ref: &CollectionReference,
