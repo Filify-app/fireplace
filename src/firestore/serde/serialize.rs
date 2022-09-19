@@ -498,3 +498,53 @@ impl SerializeTuple for TupleSerializer {
         }))
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use std::collections::HashMap;
+
+    use firestore_grpc::v1::{value::ValueType, Document, Value};
+    use serde::Serialize;
+
+    use crate::firestore::serde::serialize_to_document;
+
+    const DOC_NAME: &str = "projects/project-id/databases/(default)/documents/people/luke";
+
+    #[test]
+    fn serialize_struct() {
+        #[derive(Serialize)]
+        struct TestStruct {
+            name: String,
+            price: i32,
+        }
+
+        let value = TestStruct {
+            name: "Pep med drez".to_string(),
+            price: 65,
+        };
+        let doc = serialize_to_document(&value, DOC_NAME.to_string(), None, None).unwrap();
+
+        assert_eq!(
+            doc,
+            Document {
+                name: String::from(DOC_NAME),
+                fields: HashMap::from_iter(vec![
+                    (
+                        String::from("price"),
+                        Value {
+                            value_type: Some(ValueType::IntegerValue(65)),
+                        },
+                    ),
+                    (
+                        String::from("name"),
+                        Value {
+                            value_type: Some(ValueType::StringValue(String::from("Pep med drez"))),
+                        },
+                    ),
+                ]),
+                create_time: None,
+                update_time: None,
+            }
+        );
+    }
+}
