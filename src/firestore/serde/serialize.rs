@@ -2,7 +2,9 @@ use std::collections::HashMap;
 
 use firestore_grpc::v1::{value::ValueType, ArrayValue, MapValue, Value};
 use serde::{
-    ser::{SerializeMap, SerializeSeq, SerializeStruct, SerializeStructVariant},
+    ser::{
+        SerializeMap, SerializeSeq, SerializeStruct, SerializeStructVariant, SerializeTupleVariant,
+    },
     Serialize, Serializer,
 };
 
@@ -23,7 +25,7 @@ impl Serializer for FirestoreValueSerializer {
     type SerializeSeq = ArraySerializer;
     type SerializeTuple;
     type SerializeTupleStruct;
-    type SerializeTupleVariant;
+    type SerializeTupleVariant = TupleVariantSerializer;
     type SerializeMap = MapSerializer;
     type SerializeStruct = StructSerializer;
     type SerializeStructVariant = StructVariantSerializer;
@@ -356,6 +358,52 @@ impl SerializeStructVariant for StructVariantSerializer {
     fn end(self) -> Result<Self::Ok, Self::Error> {
         let inner = ValueType::MapValue(MapValue {
             fields: self.fields,
+        });
+
+        let mut outer = HashMap::new();
+        outer.insert(
+            self.name.to_string(),
+            Value {
+                value_type: Some(inner),
+            },
+        );
+
+        Ok(ValueType::MapValue(MapValue { fields: outer }))
+    }
+}
+
+struct TupleVariantSerializer {
+    values: Vec<Value>,
+    name: &'static str,
+}
+
+impl TupleVariantSerializer {
+    fn new(name: &'static str, size: Option<usize>) -> Self {
+        Self {
+            values: match size {
+                Some(s) => Vec::with_capacity(s),
+                None => Vec::new(),
+            },
+            name,
+        }
+    }
+}
+
+impl SerializeTupleVariant for TupleVariantSerializer {
+    type Ok = ValueType;
+    type Error = Error;
+
+    fn serialize_field<T: ?Sized + Serialize>(&mut self, value: &T) -> Result<(), Self::Error> {
+        let value_type = serialize(value)?;
+        self.values.push(Value {
+            value_type: Some(value_type),
+        });
+        Ok(())
+    }
+
+    fn end(self) -> Result<Self::Ok, Self::Error> {
+        let inner = ValueType::ArrayValue(ArrayValue {
+            values: self.values,
         });
 
         let mut outer = HashMap::new();
