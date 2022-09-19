@@ -508,8 +508,6 @@ mod tests {
 
     use crate::firestore::serde::serialize_to_document;
 
-    const DOC_NAME: &str = "projects/project-id/databases/(default)/documents/people/luke";
-
     #[test]
     fn serialize_struct() {
         #[derive(Serialize)]
@@ -522,12 +520,12 @@ mod tests {
             name: "Pep med drez".to_string(),
             price: 65,
         };
-        let doc = serialize_to_document(&value, DOC_NAME.to_string(), None, None).unwrap();
+        let doc = serialize_to_document(&value, None, None, None).unwrap();
 
         assert_eq!(
             doc,
             Document {
-                name: String::from(DOC_NAME),
+                name: String::new(),
                 fields: HashMap::from_iter(vec![
                     (
                         String::from("price"),
@@ -567,12 +565,12 @@ mod tests {
             pizza1: TestStructVariant::Pepperoni { price: 65 },
             pizza2: TestStructVariant::Hawaii { pineapple: true },
         };
-        let doc = serialize_to_document(&value, DOC_NAME.to_string(), None, None).unwrap();
+        let doc = serialize_to_document(&value, None, None, None).unwrap();
 
         assert_eq!(
             doc,
             Document {
-                name: String::from(DOC_NAME),
+                name: String::new(),
                 fields: HashMap::from_iter(vec![
                     (
                         String::from("pizza1"),
@@ -624,12 +622,12 @@ mod tests {
     #[test]
     fn serialize_map() {
         let value: HashMap<&str, i32> = HashMap::from_iter([("Pep med drez", 65)]);
-        let doc = serialize_to_document(&value, DOC_NAME.to_string(), None, None).unwrap();
+        let doc = serialize_to_document(&value, None, None, None).unwrap();
 
         assert_eq!(
             doc,
             Document {
-                name: String::from(DOC_NAME),
+                name: String::new(),
                 fields: HashMap::from_iter(vec![(
                     String::from("Pep med drez"),
                     Value {
@@ -658,12 +656,12 @@ mod tests {
         let value = TestStruct {
             pizza: TestTupleVariant::Pepperoni(65, "Pep med drez"),
         };
-        let doc = serialize_to_document(&value, DOC_NAME.to_string(), None, None).unwrap();
+        let doc = serialize_to_document(&value, None, None, None).unwrap();
 
         assert_eq!(
             doc,
             Document {
-                name: String::from(DOC_NAME),
+                name: String::new(),
                 fields: HashMap::from_iter(vec![(
                     String::from("pizza"),
                     Value {
@@ -707,12 +705,12 @@ mod tests {
         let value = TestStruct {
             pizza: TestTupleStruct("Pep med drez", 65),
         };
-        let doc = serialize_to_document(&value, DOC_NAME.to_string(), None, None).unwrap();
+        let doc = serialize_to_document(&value, None, None, None).unwrap();
 
         assert_eq!(
             doc,
             Document {
-                name: String::from(DOC_NAME),
+                name: String::new(),
                 fields: HashMap::from_iter(vec![(
                     String::from("pizza"),
                     Value {
@@ -746,12 +744,12 @@ mod tests {
         let value = TestStruct {
             pizza: ("Pep med drez", 65),
         };
-        let doc = serialize_to_document(&value, DOC_NAME.to_string(), None, None).unwrap();
+        let doc = serialize_to_document(&value, None, None, None).unwrap();
 
         assert_eq!(
             doc,
             Document {
-                name: String::from(DOC_NAME),
+                name: String::new(),
                 fields: HashMap::from_iter(vec![(
                     String::from("pizza"),
                     Value {
@@ -785,12 +783,12 @@ mod tests {
         let value = TestStruct {
             toppings: vec!["pep", "drez"],
         };
-        let doc = serialize_to_document(&value, DOC_NAME.to_string(), None, None).unwrap();
+        let doc = serialize_to_document(&value, None, None, None).unwrap();
 
         assert_eq!(
             doc,
             Document {
-                name: String::from(DOC_NAME),
+                name: String::new(),
                 fields: HashMap::from_iter(vec![(
                     String::from("toppings"),
                     Value {
@@ -824,12 +822,12 @@ mod tests {
             name: Some("bread"),
             topping: None,
         };
-        let doc = serialize_to_document(&value, DOC_NAME.to_string(), None, None).unwrap();
+        let doc = serialize_to_document(&value, None, None, None).unwrap();
 
         assert_eq!(
             doc,
             Document {
-                name: String::from(DOC_NAME),
+                name: String::new(),
                 fields: HashMap::from_iter(vec![
                     (
                         String::from("name"),
