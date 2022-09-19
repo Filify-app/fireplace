@@ -15,7 +15,7 @@ impl Serializer for FirestoreValueSerializer {
     type Ok = ValueType;
     type Error = Error;
 
-    type SerializeSeq;
+    type SerializeSeq = ArraySerializer;
     type SerializeTuple;
     type SerializeTupleStruct;
     type SerializeTupleVariant;
@@ -136,10 +136,7 @@ impl Serializer for FirestoreValueSerializer {
     }
 
     fn serialize_seq(self, len: Option<usize>) -> Result<Self::SerializeSeq, Self::Error> {
-        Ok(ArraySerializer {
-            inner: Array::with_capacity(len.unwrap_or(0)),
-            options: self.options,
-        })
+        Ok(ArraySerializer::new(len))
     }
 
     fn serialize_tuple(self, len: usize) -> Result<Self::SerializeTuple, Self::Error> {
@@ -184,5 +181,40 @@ impl Serializer for FirestoreValueSerializer {
         len: usize,
     ) -> Result<Self::SerializeStructVariant, Self::Error> {
         todo!()
+    }
+}
+
+struct ArraySerializer {
+    values: Vec<Value>,
+}
+
+impl ArraySerializer {
+    fn new(len: Option<usize>) -> Self {
+        Self {
+            values: match len {
+                Some(l) => Vec::with_capacity(l),
+                None => Vec::new(),
+            },
+        }
+    }
+}
+
+impl SerializeSeq for ArraySerializer {
+    type Ok = ValueType;
+    type Error = Error;
+
+    fn serialize_element<T: ?Sized + Serialize>(&mut self, value: &T) -> Result<(), Self::Error> {
+        let serializer = FirestoreValueSerializer::new();
+        let value_type = value.serialize(serializer)?;
+        self.values.push(Value {
+            value_type: Some(value_type),
+        });
+        Ok(())
+    }
+
+    fn end(self) -> Result<Self::Ok, Self::Error> {
+        Ok(ValueType::ArrayValue(ArrayValue {
+            values: self.values,
+        }))
     }
 }
