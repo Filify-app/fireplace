@@ -210,12 +210,12 @@ impl Serializer for FirestoreValueSerializer {
 
     fn serialize_struct_variant(
         self,
-        name: &'static str,
+        _name: &'static str,
         _variant_index: u32,
-        _variant: &'static str,
+        variant: &'static str,
         len: usize,
     ) -> Result<Self::SerializeStructVariant, Self::Error> {
-        Ok(StructVariantSerializer::new(name, len))
+        Ok(StructVariantSerializer::new(variant, len))
     }
 }
 
@@ -503,7 +503,7 @@ impl SerializeTuple for TupleSerializer {
 mod tests {
     use std::collections::HashMap;
 
-    use firestore_grpc::v1::{value::ValueType, Document, Value};
+    use firestore_grpc::v1::{value::ValueType, Document, MapValue, Value};
     use serde::Serialize;
 
     use crate::firestore::serde::serialize_to_document;
@@ -541,6 +541,79 @@ mod tests {
                             value_type: Some(ValueType::StringValue(String::from("Pep med drez"))),
                         },
                     ),
+                ]),
+                create_time: None,
+                update_time: None,
+            }
+        );
+    }
+
+    #[test]
+    fn serialize_struct_variant() {
+        #[derive(Serialize)]
+        #[serde(rename_all = "lowercase")]
+        enum TestStructVariant {
+            Pepperoni { price: i32 },
+            Hawaii { pineapple: bool },
+        }
+
+        #[derive(Serialize)]
+        struct TestStruct {
+            pizza1: TestStructVariant,
+            pizza2: TestStructVariant,
+        }
+
+        let value = TestStruct {
+            pizza1: TestStructVariant::Pepperoni { price: 65 },
+            pizza2: TestStructVariant::Hawaii { pineapple: true },
+        };
+        let doc = serialize_to_document(&value, DOC_NAME.to_string(), None, None).unwrap();
+
+        assert_eq!(
+            doc,
+            Document {
+                name: String::from(DOC_NAME),
+                fields: HashMap::from_iter(vec![
+                    (
+                        String::from("pizza1"),
+                        Value {
+                            value_type: Some(ValueType::MapValue(MapValue {
+                                fields: HashMap::from_iter(vec![(
+                                    String::from("pepperoni"),
+                                    Value {
+                                        value_type: Some(ValueType::MapValue(MapValue {
+                                            fields: HashMap::from_iter(vec![(
+                                                String::from("price"),
+                                                Value {
+                                                    value_type: Some(ValueType::IntegerValue(65)),
+                                                },
+                                            )]),
+                                        })),
+                                    },
+                                ),]),
+                            }))
+                        },
+                    ),
+                    (
+                        String::from("pizza2"),
+                        Value {
+                            value_type: Some(ValueType::MapValue(MapValue {
+                                fields: HashMap::from_iter(vec![(
+                                    String::from("hawaii"),
+                                    Value {
+                                        value_type: Some(ValueType::MapValue(MapValue {
+                                            fields: HashMap::from_iter(vec![(
+                                                String::from("pineapple"),
+                                                Value {
+                                                    value_type: Some(ValueType::BooleanValue(true)),
+                                                },
+                                            )]),
+                                        })),
+                                    },
+                                ),]),
+                            }))
+                        },
+                    )
                 ]),
                 create_time: None,
                 update_time: None,
