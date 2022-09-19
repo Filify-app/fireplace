@@ -18,6 +18,7 @@ pub enum Error {
     /// ["Must have a value set."](https://firebase.google.com/docs/firestore/reference/rpc/google.firestore.v1#google.firestore.v1.Value)
     MissingValueType,
     InvalidKey(ValueType),
+    InvalidDocument,
 }
 
 impl ser::Error for Error {
@@ -39,6 +40,9 @@ impl fmt::Display for Error {
             Self::Eof => formatter.write_str("end of content"),
             Self::MissingValueType => formatter.write_str("missing value type"),
             Self::InvalidKey(item) => write!(formatter, "invalid key type: {:?}", item),
+            Self::InvalidDocument => {
+                formatter.write_str("invalid document; must be a map-like type")
+            }
         }
     }
 }

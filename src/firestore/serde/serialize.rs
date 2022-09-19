@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 
-use firestore_grpc::v1::{value::ValueType, ArrayValue, MapValue, Value};
+use firestore_grpc::v1::{value::ValueType, ArrayValue, Document, MapValue, Value};
+use prost_types::Timestamp;
 use serde::{
     ser::{
         SerializeMap, SerializeSeq, SerializeStruct, SerializeStructVariant, SerializeTuple,
@@ -10,6 +11,25 @@ use serde::{
 };
 
 use super::Error;
+
+pub fn serialize_to_document<T: Serialize>(
+    value: &T,
+    name: String,
+    create_time: Option<Timestamp>,
+    update_time: Option<Timestamp>,
+) -> Result<Document, Error> {
+    let value_type = serialize(value)?;
+
+    match value_type {
+        ValueType::MapValue(map_value) => Ok(Document {
+            name,
+            create_time,
+            update_time,
+            fields: map_value.fields,
+        }),
+        _ => Err(Error::InvalidDocument),
+    }
+}
 
 struct FirestoreValueSerializer;
 
