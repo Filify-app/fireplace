@@ -12,7 +12,7 @@ use serde::{
 
 use super::Error;
 
-pub fn serialize_to_document<T: Serialize>(
+pub(crate) fn serialize_to_document<T: Serialize>(
     value: &T,
     name: String,
     create_time: Option<Timestamp>,
