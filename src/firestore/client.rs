@@ -128,7 +128,7 @@ impl FirestoreClient {
         collection_ref: &CollectionReference,
         document_id: Option<String>,
         document: &T,
-    ) -> Result<(), FirebaseError> {
+    ) -> Result<String, FirebaseError> {
         // We should provide no name or timestamps when creating a document
         // according to Google's Firestore API reference.
         let doc = serialize_to_document(document, None, None, None)?;
@@ -146,7 +146,15 @@ impl FirestoreClient {
         let res = self.client.create_document(request).await;
 
         match res {
-            Ok(_) => Ok(()),
+            Ok(r) => {
+                let created_doc = r.into_inner();
+                let created_doc_id = created_doc
+                    .name
+                    .rsplit_once('/')
+                    .map(|(_, id)| id.to_string())
+                    .ok_or_else(|| anyhow!("Could not get document ID from resource path"))?;
+                Ok(created_doc_id)
+            }
             Err(err) if err.code() == tonic::Code::AlreadyExists => Err(
                 FirebaseError::DocumentAlreadyExists(err.message().to_string()),
             ),
