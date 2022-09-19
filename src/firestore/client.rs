@@ -55,6 +55,35 @@ impl FirestoreClient {
     }
 
     /// Retrieve a document from Firestore at the given document reference.
+    /// ```
+    /// # #[tokio::main]
+    /// # async fn main() {
+    /// # use firebase_admin_rs::firestore::{client::FirestoreClient, reference::CollectionReference};
+    /// # use serde::Deserialize;
+    /// # let mut client = FirestoreClient::initialise(
+    /// #     &std::env::var("PROJECT_ID").unwrap(),
+    /// #     &std::env::var("TOKEN").unwrap(),
+    /// # )
+    /// # .await
+    /// # .unwrap();
+    /// #
+    /// #[derive(Debug, Deserialize, PartialEq)]
+    /// struct Person {
+    ///    name: String,
+    /// }
+    ///
+    /// let doc_ref = CollectionReference::new("people").doc("luke");
+    /// let doc = client
+    ///     .get_document(&doc_ref)
+    ///     .await
+    ///     .unwrap();
+    ///
+    /// assert_eq!(
+    ///     doc,
+    ///     Some(Person { name: "Luke Skywalker".to_string() })
+    /// )
+    /// # }
+    /// ```
     pub async fn get_document<'de, T: Deserialize<'de>>(
         &mut self,
         doc_ref: &DocumentReference,
