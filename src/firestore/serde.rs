@@ -653,4 +653,53 @@ mod tests {
             serde_json::json!({ "topping_reference": "projects/pizzaproject/databases/(default)/documents/pizzas/hawaii/toppings/pineapple" })
         );
     }
+
+    #[test]
+    fn deserialize_string_to_enum_variant() {
+        let doc =
+            create_simple_document("pizza_type", ValueType::StringValue("hawaii".to_string()));
+
+        // Mostly serves as an example. Based on https://github.com/serde-rs/serde/issues/1019.
+        // We probably want to create a derive macro for this since we use the pattern a lot.
+
+        #[derive(Debug, PartialEq)]
+        enum PizzaType {
+            Hawaii,
+            Pepperoni,
+        }
+
+        impl serde::Serialize for PizzaType {
+            fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+            where
+                S: serde::Serializer,
+            {
+                serializer.serialize_str(match *self {
+                    PizzaType::Hawaii => "hawaii",
+                    PizzaType::Pepperoni => "pepperoni",
+                })
+            }
+        }
+
+        impl<'de> serde::Deserialize<'de> for PizzaType {
+            fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+            where
+                D: serde::Deserializer<'de>,
+            {
+                let s = String::deserialize(deserializer)?;
+                Ok(match s.as_str() {
+                    "hawaii" => PizzaType::Hawaii,
+                    "pepperoni" => PizzaType::Pepperoni,
+                    _ => return Err(serde::de::Error::custom("invalid pizza type")),
+                })
+            }
+        }
+
+        #[derive(Debug, Deserialize, PartialEq)]
+        struct Pizza {
+            pizza_type: PizzaType,
+        }
+
+        let result: Pizza = deserialize_firestore_document(doc).unwrap();
+        assert_eq!(result.pizza_type, PizzaType::Hawaii);
+    }
 }
