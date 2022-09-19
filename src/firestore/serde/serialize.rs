@@ -14,7 +14,7 @@ use super::Error;
 
 pub(crate) fn serialize_to_document<T: Serialize>(
     value: &T,
-    name: String,
+    name: Option<String>,
     create_time: Option<Timestamp>,
     update_time: Option<Timestamp>,
 ) -> Result<Document, Error> {
@@ -22,9 +22,9 @@ pub(crate) fn serialize_to_document<T: Serialize>(
 
     match value_type {
         ValueType::MapValue(map_value) => Ok(Document {
-            name,
             create_time,
             update_time,
+            name: name.unwrap_or_default(),
             fields: map_value.fields,
         }),
         _ => Err(Error::InvalidDocument),

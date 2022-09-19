@@ -1,5 +1,6 @@
 use firestore_grpc::tonic;
 use firestore_grpc::v1::firestore_client::FirestoreClient as GrpcFirestoreClient;
+use firestore_grpc::v1::CreateDocumentRequest;
 use firestore_grpc::{
     tonic::{
         codegen::InterceptedService,
@@ -13,7 +14,8 @@ use serde::{Deserialize, Serialize};
 
 use crate::firestore::serde::deserialize_firestore_document;
 
-use super::reference::DocumentReference;
+use super::reference::{CollectionReference, DocumentReference};
+use super::serde::serialize_to_document;
 
 type InterceptorFunction = Box<dyn Fn(Request<()>) -> Result<Request<()>, Status>>;
 
@@ -117,5 +119,30 @@ impl FirestoreClient {
             Err(err) if err.code() == tonic::Code::NotFound => Ok(None),
             Err(err) => Err(err.into()),
         }
+    }
+
+    pub async fn create_document<'de, T: Serialize>(
+        &mut self,
+        collection_ref: &CollectionReference,
+        document_id: Option<String>,
+        document: &T,
+    ) -> Result<(), anyhow::Error> {
+        // We should provide no name or timestamps when creating a document
+        // according to Google's Firestore API reference.
+        let doc = serialize_to_document(document, None, None, None)?;
+
+        let request = CreateDocumentRequest {
+            parent: self.root_resource_path.clone(),
+            collection_id: collection_ref.to_string(),
+            // Passing an empty string means that Firestore will generate a
+            // document ID for us.
+            document_id: document_id.unwrap_or_default(),
+            document: Some(doc),
+            mask: None,
+        };
+
+        self.client.create_document(request).await?;
+
+        Ok(())
     }
 }

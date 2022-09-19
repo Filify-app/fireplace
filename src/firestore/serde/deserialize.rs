@@ -8,7 +8,7 @@ use serde::Deserialize;
 
 use super::Error;
 
-pub fn deserialize_firestore_document<'de, T: Deserialize<'de>>(
+pub(crate) fn deserialize_firestore_document<'de, T: Deserialize<'de>>(
     doc: firestore_grpc::v1::Document,
 ) -> Result<T, Error> {
     // The Document struct is essentially just a map but with extra fields like

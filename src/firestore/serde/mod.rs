@@ -1,12 +1,13 @@
 mod deserialize;
 mod serialize;
 
+pub(crate) use deserialize::*;
+pub(crate) use serialize::*;
+
 use std::fmt;
 
-pub use deserialize::*;
 use firestore_grpc::v1::value::ValueType;
 use serde::{de, ser};
-pub use serialize::*;
 
 #[derive(Debug)]
 pub enum Error {
