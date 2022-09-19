@@ -72,6 +72,7 @@ impl FirestoreClient {
     ///    name: String,
     /// }
     ///
+    /// // This document exists in the database.
     /// let doc_ref = CollectionReference::new("people").doc("luke");
     /// let doc = client
     ///     .get_document(&doc_ref)
@@ -81,7 +82,16 @@ impl FirestoreClient {
     /// assert_eq!(
     ///     doc,
     ///     Some(Person { name: "Luke Skywalker".to_string() })
-    /// )
+    /// );
+    ///
+    /// // This document doesn't exist in the database.
+    /// let doc_ref = CollectionReference::new("people").doc("luke-right-hand");
+    /// let doc = client
+    ///     .get_document::<Person>(&doc_ref)
+    ///     .await
+    ///     .unwrap();
+    ///
+    /// assert_eq!(doc, None);
     /// # }
     /// ```
     pub async fn get_document<'de, T: Deserialize<'de>>(
