@@ -9,9 +9,12 @@ pub use serialize::*;
 
 #[derive(Debug)]
 pub enum Error {
+    /// Any custom error message.
     Message(String),
+    /// There were no items left to process.
     Eof,
-    // TODO: add reference to firestore docs that say this should not be possible
+    /// This error should never surface if the Firebase API docs are correct:
+    /// ["Must have a value set."](https://firebase.google.com/docs/firestore/reference/rpc/google.firestore.v1#google.firestore.v1.Value)
     MissingValueType,
 }
 
