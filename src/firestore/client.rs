@@ -1,7 +1,7 @@
 use anyhow::{anyhow, Context};
 use firestore_grpc::tonic;
 use firestore_grpc::v1::firestore_client::FirestoreClient as GrpcFirestoreClient;
-use firestore_grpc::v1::CreateDocumentRequest;
+use firestore_grpc::v1::{CreateDocumentRequest, DocumentMask};
 use firestore_grpc::{
     tonic::{
         codegen::InterceptedService,
@@ -198,7 +198,9 @@ impl FirestoreClient {
             // document ID for us.
             document_id: document_id.unwrap_or_default(),
             document: Some(doc),
-            mask: None,
+            mask: Some(DocumentMask {
+                field_paths: vec![],
+            }),
         };
 
         let res = self.client.create_document(request).await;
