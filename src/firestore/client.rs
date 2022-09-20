@@ -1,4 +1,4 @@
-use anyhow::anyhow;
+use anyhow::{anyhow, Context};
 use firestore_grpc::tonic;
 use firestore_grpc::v1::firestore_client::FirestoreClient as GrpcFirestoreClient;
 use firestore_grpc::v1::CreateDocumentRequest;
@@ -210,7 +210,7 @@ impl FirestoreClient {
                     .name
                     .rsplit_once('/')
                     .map(|(_, id)| id.to_string())
-                    .ok_or_else(|| anyhow!("Could not get document ID from resource path"))?;
+                    .context("Could not get document ID from resource path")?;
                 Ok(created_doc_id)
             }
             Err(err) if err.code() == tonic::Code::AlreadyExists => Err(
