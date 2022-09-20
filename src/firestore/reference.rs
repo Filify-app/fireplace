@@ -32,6 +32,14 @@ impl CollectionReference {
             id: id.into(),
         }))
     }
+
+    pub fn parent(&self) -> Option<DocumentReference> {
+        self.0.parent.clone()
+    }
+
+    pub fn name(&self) -> &str {
+        &self.0.name
+    }
 }
 
 impl DocumentReference {
@@ -40,6 +48,14 @@ impl DocumentReference {
             parent: Some(self.clone()),
             name: name.into(),
         }))
+    }
+
+    pub fn parent(&self) -> CollectionReference {
+        self.0.parent.clone()
+    }
+
+    pub fn id(&self) -> &str {
+        &self.0.id
     }
 }
 

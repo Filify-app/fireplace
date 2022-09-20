@@ -87,7 +87,7 @@ impl FirestoreClient {
     ///
     /// // First we create the document in the database
     /// let doc_id = client
-    ///    .create_document(&collection_ref, None, &Person { name: "Luke Skywalker".to_string() })
+    ///    .create_document(&collection_ref, &Person { name: "Luke Skywalker".to_string() })
     ///    .await
     ///    .unwrap();
     ///
@@ -136,9 +136,47 @@ impl FirestoreClient {
         }
     }
 
-    /// Creates a document in Firestore in the given collection. You can choose
-    /// to provide a document ID, but Firestore will generate one for you if
-    /// you don't. The ID of the created document will be returned.
+    /// Creates a document in Firestore in the given collection, letting
+    /// Firestore generate the ID for you. The ID of the created document will
+    /// be returned.
+    ///
+    /// Returns an error if the document already exists.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # #[tokio::main]
+    /// # async fn main() {
+    /// # use firebase_admin_rs::firestore::{client::FirestoreClient, reference::CollectionReference};
+    /// # let mut client = FirestoreClient::initialise(
+    /// #     &std::env::var("PROJECT_ID").unwrap(),
+    /// #     &std::env::var("TOKEN").unwrap(),
+    /// # )
+    /// # .await
+    /// # .unwrap();
+    /// #
+    /// let collection_ref = CollectionReference::new("greetings");
+    /// let doc_to_create = serde_json::json!({ "message": "Hi Mom!" });
+    ///
+    /// let first_doc_id = client
+    ///     .create_document(&collection_ref, &doc_to_create)
+    ///     .await
+    ///     .unwrap();
+    ///
+    /// println!("Created document with ID: {}", first_doc_id);
+    /// # }
+    /// ```
+    pub async fn create_document<T: Serialize>(
+        &mut self,
+        collection_ref: &CollectionReference,
+        document: &T,
+    ) -> Result<String, FirebaseError> {
+        self.create_document_internal(collection_ref, None, document)
+            .await
+    }
+
+    /// Creates a document in Firestore at the given document reference.
+    /// Returns the ID of the created document.
     ///
     /// Returns an error if the document already exists.
     ///
@@ -149,7 +187,6 @@ impl FirestoreClient {
     /// # async fn main() {
     /// # use firebase_admin_rs::error::FirebaseError;
     /// # use firebase_admin_rs::firestore::{client::FirestoreClient, reference::CollectionReference};
-    /// # use serde::Serialize;
     /// # let mut client = FirestoreClient::initialise(
     /// #     &std::env::var("PROJECT_ID").unwrap(),
     /// #     &std::env::var("TOKEN").unwrap(),
@@ -157,24 +194,17 @@ impl FirestoreClient {
     /// # .await
     /// # .unwrap();
     /// #
-    /// #[derive(Debug, Serialize, PartialEq)]
-    /// struct Greeting {
-    ///     message: &'static str,
-    /// }
-    ///
     /// let collection_ref = CollectionReference::new("greetings");
-    /// let doc_to_create = Greeting { message: "Hi Mom!" };
+    /// let doc_to_create = serde_json::json!({ "message": "Hi Mom!" });
     ///
-    /// // Create a document in the "greetings" collection, letting Firestore
-    /// // generate the document's ID for us.
     /// let first_doc_id = client
-    ///     .create_document(&collection_ref, None, &doc_to_create)
+    ///     .create_document(&collection_ref, &doc_to_create)
     ///     .await
     ///     .unwrap();
     ///
     /// // If we create another document with the same ID, it should fail
     /// let second_create_result = client
-    ///     .create_document(&collection_ref, Some(first_doc_id), &doc_to_create)
+    ///     .create_document_at_ref(&collection_ref.doc(first_doc_id), &doc_to_create)
     ///     .await;
     ///
     /// assert!(matches!(
@@ -183,7 +213,16 @@ impl FirestoreClient {
     /// ));
     /// # }
     /// ```
-    pub async fn create_document<T: Serialize>(
+    pub async fn create_document_at_ref<T: Serialize>(
+        &mut self,
+        doc_ref: &DocumentReference,
+        document: &T,
+    ) -> Result<String, FirebaseError> {
+        self.create_document_internal(&doc_ref.parent(), Some(doc_ref.id().to_string()), document)
+            .await
+    }
+
+    async fn create_document_internal<T: Serialize>(
         &mut self,
         collection_ref: &CollectionReference,
         document_id: Option<String>,
