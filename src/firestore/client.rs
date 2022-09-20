@@ -43,6 +43,8 @@ fn create_auth_interceptor(token: &str) -> InterceptorFunction {
 }
 
 impl FirestoreClient {
+    /// Initialise a new client that can be used to interact with a Firestore
+    /// database.
     pub async fn initialise(project_id: &str, token: &str) -> Result<Self, FirebaseError> {
         let endpoint =
             Channel::from_static(URL).tls_config(ClientTlsConfig::new().domain_name(DOMAIN));
