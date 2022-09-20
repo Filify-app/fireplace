@@ -386,17 +386,11 @@ impl FirestoreClient {
         let name = self.get_name_with(doc_ref);
         let doc = serialize_to_document(document, Some(name), None, None)?;
 
-        let update_mask = if fields.is_empty() {
-            None
-        } else {
-            Some(DocumentMask {
-                field_paths: fields.iter().map(|s| s.to_string()).collect(),
-            })
-        };
-
         let request = UpdateDocumentRequest {
             document: Some(doc),
-            update_mask,
+            update_mask: Some(DocumentMask {
+                field_paths: fields.iter().map(|s| s.to_string()).collect(),
+            }),
             mask: None,
             current_document: None,
         };
