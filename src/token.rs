@@ -12,6 +12,7 @@ use crate::error::FirebaseError;
 /// avoid accidentally leaking credentials.
 #[derive(Deserialize)]
 pub struct ServiceAccount {
+    project_id: String,
     private_key: String,
     private_key_id: String,
     client_email: String,
@@ -43,6 +44,10 @@ impl FirebaseTokenProvider {
             &self.service_account.private_key,
         )?;
         Ok(token)
+    }
+
+    pub fn project_id(&self) -> &str {
+        &self.service_account.project_id
     }
 }
 

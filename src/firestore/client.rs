@@ -79,14 +79,10 @@ impl FirestoreClient {
     /// ```
     /// # #[tokio::main]
     /// # async fn main() {
-    /// # use firebase_admin_rs::firestore::{client::FirestoreClient, reference::CollectionReference};
+    /// # use firebase_admin_rs::{firestore::{client::FirestoreClient, reference::CollectionReference}, token::FirebaseTokenProvider};
     /// # use serde::{Serialize, Deserialize};
-    /// # let mut client = FirestoreClient::initialise(
-    /// #     &std::env::var("PROJECT_ID").unwrap(),
-    /// #     &std::env::var("TOKEN").unwrap(),
-    /// # )
-    /// # .await
-    /// # .unwrap();
+    /// # let token_provider = FirebaseTokenProvider::from_service_account_file("./test-service-account.json").unwrap();
+    /// # let mut client = FirestoreClient::initialise(&token_provider.project_id().to_string(), token_provider).await.unwrap();
     /// #
     /// #[derive(Debug, Serialize, Deserialize, PartialEq)]
     /// struct Person {
@@ -157,13 +153,9 @@ impl FirestoreClient {
     /// ```
     /// # #[tokio::main]
     /// # async fn main() {
-    /// # use firebase_admin_rs::firestore::{client::FirestoreClient, reference::CollectionReference};
-    /// # let mut client = FirestoreClient::initialise(
-    /// #     &std::env::var("PROJECT_ID").unwrap(),
-    /// #     &std::env::var("TOKEN").unwrap(),
-    /// # )
-    /// # .await
-    /// # .unwrap();
+    /// # use firebase_admin_rs::{firestore::{client::FirestoreClient, reference::CollectionReference}, token::FirebaseTokenProvider};
+    /// # let token_provider = FirebaseTokenProvider::from_service_account_file("./test-service-account.json").unwrap();
+    /// # let mut client = FirestoreClient::initialise(&token_provider.project_id().to_string(), token_provider).await.unwrap();
     /// #
     /// let collection_ref = CollectionReference::new("greetings");
     /// let doc_to_create = serde_json::json!({ "message": "Hi Mom!" });
@@ -196,13 +188,9 @@ impl FirestoreClient {
     /// # #[tokio::main]
     /// # async fn main() {
     /// # use firebase_admin_rs::error::FirebaseError;
-    /// # use firebase_admin_rs::firestore::{client::FirestoreClient, reference::CollectionReference};
-    /// # let mut client = FirestoreClient::initialise(
-    /// #     &std::env::var("PROJECT_ID").unwrap(),
-    /// #     &std::env::var("TOKEN").unwrap(),
-    /// # )
-    /// # .await
-    /// # .unwrap();
+    /// # use firebase_admin_rs::{firestore::{client::FirestoreClient, reference::CollectionReference}, token::FirebaseTokenProvider};
+    /// # let token_provider = FirebaseTokenProvider::from_service_account_file("./test-service-account.json").unwrap();
+    /// # let mut client = FirestoreClient::initialise(&token_provider.project_id().to_string(), token_provider).await.unwrap();
     /// #
     /// let collection_ref = CollectionReference::new("greetings");
     /// let doc_to_create = serde_json::json!({ "message": "Hi Mom!" });
@@ -281,13 +269,9 @@ impl FirestoreClient {
     /// ```
     /// # #[tokio::main]
     /// # async fn main() {
-    /// # use firebase_admin_rs::firestore::{client::FirestoreClient, reference::{CollectionReference, DocumentReference}};
-    /// # let mut client = FirestoreClient::initialise(
-    /// #     &std::env::var("PROJECT_ID").unwrap(),
-    /// #     &std::env::var("TOKEN").unwrap(),
-    /// # )
-    /// # .await
-    /// # .unwrap();
+    /// # use firebase_admin_rs::{firestore::{client::FirestoreClient, reference::CollectionReference}, token::FirebaseTokenProvider};
+    /// # let token_provider = FirebaseTokenProvider::from_service_account_file("./test-service-account.json").unwrap();
+    /// # let mut client = FirestoreClient::initialise(&token_provider.project_id().to_string(), token_provider).await.unwrap();
     /// #
     /// let doc_ref = CollectionReference::new("greetings").doc("some-doc-id-to-set");
     /// let doc = serde_json::json!({ "message": "Hello, world!".to_string() });
@@ -355,14 +339,10 @@ impl FirestoreClient {
     /// ```
     /// # #[tokio::main]
     /// # async fn main() {
-    /// # use firebase_admin_rs::firestore::{client::FirestoreClient, reference::{CollectionReference, DocumentReference}};
     /// # use serde::{Deserialize, Serialize};
-    /// # let mut client = FirestoreClient::initialise(
-    /// #     &std::env::var("PROJECT_ID").unwrap(),
-    /// #     &std::env::var("TOKEN").unwrap(),
-    /// # )
-    /// # .await
-    /// # .unwrap();
+    /// # use firebase_admin_rs::{firestore::{client::FirestoreClient, reference::CollectionReference}, token::FirebaseTokenProvider};
+    /// # let token_provider = FirebaseTokenProvider::from_service_account_file("./test-service-account.json").unwrap();
+    /// # let mut client = FirestoreClient::initialise(&token_provider.project_id().to_string(), token_provider).await.unwrap();
     /// #
     /// #[derive(Debug, Serialize, Deserialize, PartialEq)]
     /// struct TestType {
