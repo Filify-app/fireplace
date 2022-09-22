@@ -82,6 +82,8 @@ impl<'a> From<&'a ServiceAccount> for JwtClaims<'a> {
         JwtClaims {
             iss: &service_account.client_email,
             sub: &service_account.client_email,
+            // TODO: This is something I had to find in some random place. The official aud URL
+            // doesn't work. How to fix?
             aud: "https://firestore.googleapis.com/",
             iat: issued_at_time,
             exp: issued_at_time + 3600,
