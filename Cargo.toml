@@ -13,3 +13,4 @@ serde_json = "1.0"
 tokio = { version = "1.21", features = ["full"] }
 prost-types = "0.9"
 thiserror = "1.0"
+jsonwebtoken = "8.1"

@@ -17,6 +17,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::error::FirebaseError;
 use crate::firestore::serde::deserialize_firestore_document;
+use crate::token::FirebaseTokenProvider;
 
 use super::reference::{CollectionReference, DocumentReference};
 use super::serde::serialize_to_document;
@@ -31,13 +32,19 @@ pub struct FirestoreClient {
     root_resource_path: String,
 }
 
-fn create_auth_interceptor(token: &str) -> InterceptorFunction {
-    let bearer_token = format!("Bearer {}", token);
-    let header_value = MetadataValue::from_str(&bearer_token).unwrap();
-
+fn create_auth_interceptor(token_provider: FirebaseTokenProvider) -> InterceptorFunction {
     Box::new(move |mut req: Request<()>| {
-        req.metadata_mut()
-            .insert("authorization", header_value.clone());
+        let token = token_provider
+            .get_token()
+            .map_err(|_| Status::unauthenticated("Could not get token from token provider"))?;
+
+        let bearer_token = format!("Bearer {}", token);
+        let mut header_value = MetadataValue::from_str(&bearer_token).map_err(|_| {
+            Status::unauthenticated("Failed to construct metadata value for authorization token")
+        })?;
+        header_value.set_sensitive(true);
+
+        req.metadata_mut().insert("authorization", header_value);
         Ok(req)
     })
 }
@@ -45,14 +52,17 @@ fn create_auth_interceptor(token: &str) -> InterceptorFunction {
 impl FirestoreClient {
     /// Initialise a new client that can be used to interact with a Firestore
     /// database.
-    pub async fn initialise(project_id: &str, token: &str) -> Result<Self, FirebaseError> {
+    pub async fn initialise(
+        project_id: &str,
+        token_provider: FirebaseTokenProvider,
+    ) -> Result<Self, FirebaseError> {
         let endpoint =
             Channel::from_static(URL).tls_config(ClientTlsConfig::new().domain_name(DOMAIN));
 
         let channel = endpoint?.connect().await?;
 
         let service =
-            GrpcFirestoreClient::with_interceptor(channel, create_auth_interceptor(token));
+            GrpcFirestoreClient::with_interceptor(channel, create_auth_interceptor(token_provider));
 
         let resource_path = format!("projects/{}/databases/(default)/documents", project_id);
 
