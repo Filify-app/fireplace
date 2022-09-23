@@ -79,10 +79,9 @@ impl FirestoreClient {
     /// ```
     /// # #[tokio::main]
     /// # async fn main() {
-    /// # use firebase_admin_rs::{firestore::{client::FirestoreClient, reference::CollectionReference}, token::FirebaseTokenProvider};
     /// # use serde::{Serialize, Deserialize};
-    /// # let token_provider = FirebaseTokenProvider::from_service_account_file("./test-service-account.json").unwrap();
-    /// # let mut client = FirestoreClient::initialise(&token_provider.project_id().to_string(), token_provider).await.unwrap();
+    /// # use firebase_admin_rs::firestore::reference::CollectionReference;
+    /// # let mut client = firebase_admin_rs::firestore::test_helpers::initialise().await.unwrap();
     /// #
     /// #[derive(Debug, Serialize, Deserialize, PartialEq)]
     /// struct Person {
@@ -153,9 +152,8 @@ impl FirestoreClient {
     /// ```
     /// # #[tokio::main]
     /// # async fn main() {
-    /// # use firebase_admin_rs::{firestore::{client::FirestoreClient, reference::CollectionReference}, token::FirebaseTokenProvider};
-    /// # let token_provider = FirebaseTokenProvider::from_service_account_file("./test-service-account.json").unwrap();
-    /// # let mut client = FirestoreClient::initialise(&token_provider.project_id().to_string(), token_provider).await.unwrap();
+    /// # use firebase_admin_rs::firestore::reference::CollectionReference;
+    /// # let mut client = firebase_admin_rs::firestore::test_helpers::initialise().await.unwrap();
     /// #
     /// let collection_ref = CollectionReference::new("greetings");
     /// let doc_to_create = serde_json::json!({ "message": "Hi Mom!" });
@@ -187,10 +185,8 @@ impl FirestoreClient {
     /// ```
     /// # #[tokio::main]
     /// # async fn main() {
-    /// # use firebase_admin_rs::error::FirebaseError;
-    /// # use firebase_admin_rs::{firestore::{client::FirestoreClient, reference::CollectionReference}, token::FirebaseTokenProvider};
-    /// # let token_provider = FirebaseTokenProvider::from_service_account_file("./test-service-account.json").unwrap();
-    /// # let mut client = FirestoreClient::initialise(&token_provider.project_id().to_string(), token_provider).await.unwrap();
+    /// # use firebase_admin_rs::{firestore::reference::CollectionReference, error::FirebaseError};
+    /// # let mut client = firebase_admin_rs::firestore::test_helpers::initialise().await.unwrap();
     /// #
     /// let collection_ref = CollectionReference::new("greetings");
     /// let doc_to_create = serde_json::json!({ "message": "Hi Mom!" });
@@ -269,9 +265,8 @@ impl FirestoreClient {
     /// ```
     /// # #[tokio::main]
     /// # async fn main() {
-    /// # use firebase_admin_rs::{firestore::{client::FirestoreClient, reference::CollectionReference}, token::FirebaseTokenProvider};
-    /// # let token_provider = FirebaseTokenProvider::from_service_account_file("./test-service-account.json").unwrap();
-    /// # let mut client = FirestoreClient::initialise(&token_provider.project_id().to_string(), token_provider).await.unwrap();
+    /// # use firebase_admin_rs::firestore::reference::CollectionReference;
+    /// # let mut client = firebase_admin_rs::firestore::test_helpers::initialise().await.unwrap();
     /// #
     /// let doc_ref = CollectionReference::new("greetings").doc("some-doc-id-to-set");
     /// let doc = serde_json::json!({ "message": "Hello, world!".to_string() });
@@ -340,9 +335,8 @@ impl FirestoreClient {
     /// # #[tokio::main]
     /// # async fn main() {
     /// # use serde::{Deserialize, Serialize};
-    /// # use firebase_admin_rs::{firestore::{client::FirestoreClient, reference::CollectionReference}, token::FirebaseTokenProvider};
-    /// # let token_provider = FirebaseTokenProvider::from_service_account_file("./test-service-account.json").unwrap();
-    /// # let mut client = FirestoreClient::initialise(&token_provider.project_id().to_string(), token_provider).await.unwrap();
+    /// # use firebase_admin_rs::firestore::reference::CollectionReference;
+    /// # let mut client = firebase_admin_rs::firestore::test_helpers::initialise().await.unwrap();
     /// #
     /// #[derive(Debug, Serialize, Deserialize, PartialEq)]
     /// struct TestType {

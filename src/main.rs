@@ -1,13 +1,13 @@
 use firebase_admin_rs::{
     firestore::{client::FirestoreClient, reference::CollectionReference},
-    token::FirebaseTokenProvider,
+    token::{FirebaseTokenProvider, ServiceAccount},
 };
 
 #[tokio::main]
 async fn main() {
-    let token_provider =
-        FirebaseTokenProvider::from_service_account_file("./test-service-account.json").unwrap();
-    let project_id = token_provider.project_id().to_string();
+    let service_account = ServiceAccount::from_file("./test-service-account.json").unwrap();
+    let project_id = service_account.project_id().to_string();
+    let token_provider = FirebaseTokenProvider::new(service_account);
 
     let mut client = FirestoreClient::initialise(&project_id, token_provider)
         .await

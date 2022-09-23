@@ -19,31 +19,35 @@ pub struct ServiceAccount {
     client_id: String,
 }
 
+impl ServiceAccount {
+    /// Creates a new `ServiceAccount` instance from a service account JSON
+    /// file. You can download such a file from Firebase.
+    pub fn from_file(path: impl AsRef<Path>) -> Result<Self, FirebaseError> {
+        let file_reader = File::open(path).context("Failed to read service account JSON file")?;
+        let service_account = serde_json::from_reader(file_reader)
+            .context("Could not extract service account details from file")?;
+
+        Ok(service_account)
+    }
+
+    pub fn project_id(&self) -> &str {
+        &self.project_id
+    }
+}
+
 pub struct FirebaseTokenProvider {
     service_account: ServiceAccount,
 }
 
 impl FirebaseTokenProvider {
-    /// Creates a new `FirebaseAuth` instance from a service account JSON file.
-    /// You can download such a file from Firebase.
-    pub fn from_service_account_file(
-        path: impl AsRef<Path>,
-    ) -> Result<FirebaseTokenProvider, FirebaseError> {
-        let file_reader = File::open(path).context("Failed to read service account JSON file")?;
-        let service_account = serde_json::from_reader(file_reader)
-            .context("Could not extract service account details from file")?;
-
-        Ok(FirebaseTokenProvider { service_account })
+    pub fn new(service_account: ServiceAccount) -> Self {
+        Self { service_account }
     }
 
     pub fn get_token(&self) -> Result<String, FirebaseError> {
         // TODO: Reuse token if it's still valid and regenerate it if it's not
         let token = create_jwt(&self.service_account)?;
         Ok(token)
-    }
-
-    pub fn project_id(&self) -> &str {
-        &self.service_account.project_id
     }
 }
 
