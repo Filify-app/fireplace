@@ -38,11 +38,7 @@ impl FirebaseTokenProvider {
 
     pub fn get_token(&self) -> Result<String, FirebaseError> {
         // TODO: Reuse token if it's still valid and regenerate it if it's not
-        let token = create_jwt(
-            &self.service_account,
-            self.service_account.private_key_id.clone(),
-            &self.service_account.private_key,
-        )?;
+        let token = create_jwt(&self.service_account)?;
         Ok(token)
     }
 
@@ -51,16 +47,24 @@ impl FirebaseTokenProvider {
     }
 }
 
-fn create_jwt<'a>(
-    into_claims: impl Into<JwtClaims<'a>>,
-    private_key_id: String,
-    private_key: &str,
-) -> Result<String, anyhow::Error> {
+fn create_jwt(service_account: &ServiceAccount) -> Result<String, anyhow::Error> {
     let mut header = jsonwebtoken::Header::new(jsonwebtoken::Algorithm::RS256);
-    header.kid = Some(private_key_id);
+    header.kid = Some(service_account.private_key_id.clone());
 
-    let claims = into_claims.into();
-    let encoding_key = jsonwebtoken::EncodingKey::from_rsa_pem(private_key.as_ref())?;
+    let issued_at_time = jsonwebtoken::get_current_timestamp();
+    let claims = JwtClaims {
+        iss: &service_account.client_email,
+        sub: &service_account.client_email,
+        // TODO: This is something I had to find in some random place. The official aud URL
+        // doesn't work. How to fix?
+        aud: "https://firestore.googleapis.com/",
+        iat: issued_at_time,
+        exp: issued_at_time + 3600,
+        uid: &service_account.client_id,
+    };
+
+    let encoding_key =
+        jsonwebtoken::EncodingKey::from_rsa_pem(service_account.private_key.as_ref())?;
 
     jsonwebtoken::encode(&header, &claims, &encoding_key).context("Failed to create JWT")
 }
@@ -73,21 +77,4 @@ struct JwtClaims<'a> {
     iat: u64,
     exp: u64,
     uid: &'a str,
-}
-
-impl<'a> From<&'a ServiceAccount> for JwtClaims<'a> {
-    fn from(service_account: &'a ServiceAccount) -> Self {
-        let issued_at_time = jsonwebtoken::get_current_timestamp();
-
-        JwtClaims {
-            iss: &service_account.client_email,
-            sub: &service_account.client_email,
-            // TODO: This is something I had to find in some random place. The official aud URL
-            // doesn't work. How to fix?
-            aud: "https://firestore.googleapis.com/",
-            iat: issued_at_time,
-            exp: issued_at_time + 3600,
-            uid: &service_account.client_id,
-        }
-    }
 }
