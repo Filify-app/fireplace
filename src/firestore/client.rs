@@ -1,5 +1,4 @@
 use std::fmt::Display;
-use std::sync::Mutex;
 
 use anyhow::{anyhow, Context};
 use firestore_grpc::tonic;
@@ -23,7 +22,7 @@ use crate::token::FirebaseTokenProvider;
 use super::reference::{CollectionReference, DocumentReference};
 use super::serde::serialize_to_document;
 
-type InterceptorFunction = Box<dyn Fn(Request<()>) -> Result<Request<()>, Status>>;
+type InterceptorFunction = Box<dyn FnMut(Request<()>) -> Result<Request<()>, Status>>;
 
 const URL: &str = "https://firestore.googleapis.com";
 const DOMAIN: &str = "firestore.googleapis.com";
@@ -33,13 +32,9 @@ pub struct FirestoreClient {
     root_resource_path: String,
 }
 
-fn create_auth_interceptor(token_provider: FirebaseTokenProvider) -> InterceptorFunction {
-    let token_provider = Mutex::new(token_provider);
-
+fn create_auth_interceptor(mut token_provider: FirebaseTokenProvider) -> InterceptorFunction {
     Box::new(move |mut req: Request<()>| {
         let token = token_provider
-            .lock()
-            .map_err(|_| Status::internal("Failed to acquire token provider lock"))?
             .get_token()
             .map_err(|_| Status::unauthenticated("Could not get token from token provider"))?;
 
