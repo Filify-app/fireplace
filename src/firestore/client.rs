@@ -1,4 +1,5 @@
 use std::fmt::Display;
+use std::sync::Mutex;
 
 use anyhow::{anyhow, Context};
 use firestore_grpc::tonic;
@@ -33,8 +34,12 @@ pub struct FirestoreClient {
 }
 
 fn create_auth_interceptor(token_provider: FirebaseTokenProvider) -> InterceptorFunction {
+    let token_provider = Mutex::new(token_provider);
+
     Box::new(move |mut req: Request<()>| {
         let token = token_provider
+            .lock()
+            .map_err(|_| Status::internal("Failed to acquire token provider lock"))?
             .get_token()
             .map_err(|_| Status::unauthenticated("Could not get token from token provider"))?;
 
@@ -45,6 +50,7 @@ fn create_auth_interceptor(token_provider: FirebaseTokenProvider) -> Interceptor
         header_value.set_sensitive(true);
 
         req.metadata_mut().insert("authorization", header_value);
+
         Ok(req)
     })
 }

@@ -3,7 +3,7 @@ use std::{fs::File, path::Path};
 use anyhow::Context;
 use serde::{Deserialize, Serialize};
 
-use crate::error::FirebaseError;
+use crate::{error::FirebaseError, utils::get_unix_time};
 
 /// Service account information contained within the service account JSON file
 /// that you can download from Firebase.
@@ -37,23 +37,43 @@ impl ServiceAccount {
 
 pub struct FirebaseTokenProvider {
     service_account: ServiceAccount,
+    current_token: Option<Token>,
+}
+
+struct Token {
+    jwt: String,
+    /// The timestamp at which the token expires. Represented as seconds since
+    /// the UNIX epoch in accordance with the [Firebase API docs](https://firebase.google.com/docs/auth/admin/create-custom-tokens#create_custom_tokens_using_a_third-party_jwt_library).
+    expires_at: u64,
 }
 
 impl FirebaseTokenProvider {
     pub fn new(service_account: ServiceAccount) -> Self {
-        Self { service_account }
+        Self {
+            service_account,
+            current_token: None,
+        }
     }
 
-    pub fn get_token(&self) -> Result<String, FirebaseError> {
-        // TODO: Reuse token if it's still valid and regenerate it if it's not
-        let token = create_jwt(&self.service_account)?;
-        Ok(token)
+    pub fn get_token(&mut self) -> Result<String, FirebaseError> {
+        match &self.current_token {
+            Some(token) if token.expires_at > get_unix_time()? => Ok(token.jwt.clone()),
+            _ => {
+                let token = create_jwt(&self.service_account)?;
+                let jwt = token.jwt.clone();
+                self.current_token = Some(token);
+                Ok(jwt)
+            }
+        }
     }
 }
 
-fn create_jwt(service_account: &ServiceAccount) -> Result<String, anyhow::Error> {
+fn create_jwt(service_account: &ServiceAccount) -> Result<Token, anyhow::Error> {
     let mut header = jsonwebtoken::Header::new(jsonwebtoken::Algorithm::RS256);
     header.kid = Some(service_account.private_key_id.clone());
+
+    let valid_duration = 60 * 60; // the token will be valid for 60 minutes
+    let expiry_buffer = 5 * 60; // but we will create a new token after 55 minutes just to be sure
 
     let issued_at_time = jsonwebtoken::get_current_timestamp();
     let claims = JwtClaims {
@@ -63,14 +83,20 @@ fn create_jwt(service_account: &ServiceAccount) -> Result<String, anyhow::Error>
         // doesn't work. How to fix?
         aud: "https://firestore.googleapis.com/",
         iat: issued_at_time,
-        exp: issued_at_time + 3600,
+        exp: issued_at_time + valid_duration,
         uid: &service_account.client_id,
     };
 
     let encoding_key =
         jsonwebtoken::EncodingKey::from_rsa_pem(service_account.private_key.as_ref())?;
 
-    jsonwebtoken::encode(&header, &claims, &encoding_key).context("Failed to create JWT")
+    let jwt =
+        jsonwebtoken::encode(&header, &claims, &encoding_key).context("Failed to create JWT")?;
+
+    Ok(Token {
+        jwt,
+        expires_at: claims.exp - expiry_buffer,
+    })
 }
 
 #[derive(Serialize)]
