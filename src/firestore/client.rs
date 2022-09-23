@@ -81,7 +81,7 @@ impl FirestoreClient {
     /// # #[tokio::main]
     /// # async fn main() {
     /// # use serde::{Serialize, Deserialize};
-    /// # use firebase_admin_rs::firestore::reference::CollectionReference;
+    /// # use firebase_admin_rs::firestore::collection;
     /// # let mut client = firebase_admin_rs::firestore::test_helpers::initialise().await.unwrap();
     /// #
     /// #[derive(Debug, Serialize, Deserialize, PartialEq)]
@@ -89,7 +89,7 @@ impl FirestoreClient {
     ///    name: String,
     /// }
     ///
-    /// let collection_ref = CollectionReference::new("people");
+    /// let collection_ref = collection("people");
     ///
     /// // First we create the document in the database
     /// let doc_id = client
@@ -110,7 +110,7 @@ impl FirestoreClient {
     /// );
     ///
     /// // This document doesn't exist in the database, so we get a None.
-    /// let doc_ref = CollectionReference::new("people").doc("luke-right-hand");
+    /// let doc_ref = collection("people").doc("luke-right-hand");
     /// let doc = client
     ///     .get_document::<Person>(&doc_ref)
     ///     .await
@@ -153,10 +153,10 @@ impl FirestoreClient {
     /// ```
     /// # #[tokio::main]
     /// # async fn main() {
-    /// # use firebase_admin_rs::firestore::reference::CollectionReference;
+    /// # use firebase_admin_rs::firestore::collection;
     /// # let mut client = firebase_admin_rs::firestore::test_helpers::initialise().await.unwrap();
     /// #
-    /// let collection_ref = CollectionReference::new("greetings");
+    /// let collection_ref = collection("greetings");
     /// let doc_to_create = serde_json::json!({ "message": "Hi Mom!" });
     ///
     /// let first_doc_id = client
@@ -186,10 +186,10 @@ impl FirestoreClient {
     /// ```
     /// # #[tokio::main]
     /// # async fn main() {
-    /// # use firebase_admin_rs::{firestore::reference::CollectionReference, error::FirebaseError};
+    /// # use firebase_admin_rs::{firestore::collection, error::FirebaseError};
     /// # let mut client = firebase_admin_rs::firestore::test_helpers::initialise().await.unwrap();
     /// #
-    /// let collection_ref = CollectionReference::new("greetings");
+    /// let collection_ref = collection("greetings");
     /// let doc_to_create = serde_json::json!({ "message": "Hi Mom!" });
     ///
     /// let first_doc_id = client
@@ -266,10 +266,10 @@ impl FirestoreClient {
     /// ```
     /// # #[tokio::main]
     /// # async fn main() {
-    /// # use firebase_admin_rs::firestore::reference::CollectionReference;
+    /// # use firebase_admin_rs::firestore::collection;
     /// # let mut client = firebase_admin_rs::firestore::test_helpers::initialise().await.unwrap();
     /// #
-    /// let doc_ref = CollectionReference::new("greetings").doc("some-doc-id-to-set");
+    /// let doc_ref = collection("greetings").doc("some-doc-id-to-set");
     /// let doc = serde_json::json!({ "message": "Hello, world!".to_string() });
     ///
     /// // We can upsert the document in the database
@@ -336,7 +336,7 @@ impl FirestoreClient {
     /// # #[tokio::main]
     /// # async fn main() {
     /// # use serde::{Deserialize, Serialize};
-    /// # use firebase_admin_rs::firestore::reference::CollectionReference;
+    /// # use firebase_admin_rs::firestore::collection;
     /// # let mut client = firebase_admin_rs::firestore::test_helpers::initialise().await.unwrap();
     /// #
     /// #[derive(Debug, Serialize, Deserialize, PartialEq)]
@@ -353,7 +353,7 @@ impl FirestoreClient {
     /// }
     ///
     /// // First, we set a document in the database
-    /// let doc_ref = CollectionReference::new("greetings").doc("some-doc-id-to-set-merge");
+    /// let doc_ref = collection("greetings").doc("some-doc-id-to-set-merge");
     /// client
     ///     .set_document(
     ///         &doc_ref,

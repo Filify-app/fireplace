@@ -1,5 +1,9 @@
 use std::rc::Rc;
 
+pub fn collection(name: impl Into<String>) -> CollectionReference {
+    CollectionReference::new(name)
+}
+
 #[derive(Debug, Clone)]
 pub struct DocumentReference(Rc<DocumentReferenceInner>);
 

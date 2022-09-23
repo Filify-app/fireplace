@@ -9,3 +9,5 @@ pub mod serde;
 ///
 /// Relevant rust-lang issue: <https://github.com/rust-lang/rust/issues/67295>
 pub mod test_helpers;
+
+pub use reference::collection;
