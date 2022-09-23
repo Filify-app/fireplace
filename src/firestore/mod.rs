@@ -7,5 +7,5 @@ pub mod serde;
 /// `#[cfg(doctest)]`, and we can't make it private either since doctests are
 /// full-blown integration tests.
 ///
-/// Relevant rust-lang issue: https://github.com/rust-lang/rust/issues/67295
+/// Relevant rust-lang issue: <https://github.com/rust-lang/rust/issues/67295>
 pub mod test_helpers;
