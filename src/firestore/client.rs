@@ -1,9 +1,15 @@
 use std::fmt::Display;
+use std::future;
+use std::pin::Pin;
 
 use anyhow::{anyhow, Context};
 use firestore_grpc::tonic;
 use firestore_grpc::v1::firestore_client::FirestoreClient as GrpcFirestoreClient;
-use firestore_grpc::v1::{CreateDocumentRequest, DocumentMask, UpdateDocumentRequest};
+use firestore_grpc::v1::run_query_request::QueryType;
+use firestore_grpc::v1::structured_query::CollectionSelector;
+use firestore_grpc::v1::{
+    CreateDocumentRequest, DocumentMask, RunQueryRequest, StructuredQuery, UpdateDocumentRequest,
+};
 use firestore_grpc::{
     tonic::{
         codegen::InterceptedService,
@@ -13,14 +19,18 @@ use firestore_grpc::{
     },
     v1::GetDocumentRequest,
 };
+use futures::{Stream, StreamExt};
 use serde::{Deserialize, Serialize};
 
 use crate::error::FirebaseError;
 use crate::firestore::serde::deserialize_firestore_document;
 use crate::token::FirebaseTokenProvider;
 
+use super::query::Filter;
 use super::reference::{CollectionReference, DocumentReference};
 use super::serde::serialize_to_document;
+
+type FirebaseStream<T, E> = Pin<Box<dyn Stream<Item = Result<T, E>>>>;
 
 type InterceptorFunction = Box<dyn FnMut(Request<()>) -> Result<Request<()>, Status>>;
 
@@ -431,6 +441,148 @@ impl FirestoreClient {
         let deserialized = deserialize_firestore_document::<O>(doc)?;
 
         Ok(deserialized)
+    }
+
+    /// Query a collection for documents that fulfil the given criteria.
+    ///
+    /// Returns a [`Stream`](futures::stream::Stream) of query results,
+    /// allowing you to process results as they are coming in.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # #[tokio::main]
+    /// # async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    /// # use firebase_admin_rs::firestore::collection;
+    /// # use serde::{Deserialize, Serialize};
+    /// # let mut client = firebase_admin_rs::firestore::test_helpers::initialise().await?;
+    /// #
+    /// use firebase_admin_rs::firestore::query::{filter, ArrayContains, EqualTo};
+    /// use futures::TryStreamExt;
+    ///
+    /// #[derive(Debug, Serialize, Deserialize, PartialEq, Clone)]
+    /// struct Pizza {
+    ///     name: String,
+    ///     toppings: Vec<String>,
+    /// }
+    ///
+    /// // Instantiate our example pizzas
+    /// let pepperoni = Pizza {
+    ///     name: "Pepperoni".into(),
+    ///     toppings: vec!["pepperoni".into(), "cheese".into()],
+    /// };
+    /// let hawaii = Pizza {
+    ///     name: "Hawaii".into(),
+    ///     toppings: vec!["pineapple".into(), "ham".into(), "cheese".into()],
+    /// };
+    ///
+    /// // Create the pizzas in the database
+    /// client
+    ///     .set_document(&collection("pizzas").doc("pepperoni"), &pepperoni)
+    ///     .await?;
+    /// client
+    ///     .set_document(&collection("pizzas").doc("hawaii"), &hawaii)
+    ///     .await?;
+    ///
+    /// // Query for pizzas whose name field is "Hawaii"
+    /// let hawaii_results: Vec<Pizza> = client
+    ///     .query(&collection("pizzas"), filter("name", EqualTo("Hawaii"))?)
+    ///     .await?
+    ///     .try_collect()
+    ///     .await?;
+    ///
+    /// // We expect a single search hit - the hawaii pizza.
+    /// assert_eq!(hawaii_results, vec![hawaii.clone()]);
+    ///
+    /// // Query for pizzas that have a "cheese" entry in the toppings list.
+    /// let mut cheese_results: Vec<Pizza> = client
+    ///     .query(
+    ///         &collection("pizzas"),
+    ///         filter("toppings", ArrayContains("cheese"))?,
+    ///     )
+    ///     .await?
+    ///     .try_collect()
+    ///     .await?;
+    ///
+    /// // We don't have a guaranteed ordering of the query results, so we sort
+    /// // them by name to make sure our equality check works.
+    /// cheese_results.sort_by(|a, b| a.name.cmp(&b.name));
+    ///
+    /// // We expect both pizzas to be found
+    /// assert_eq!(cheese_results, vec![hawaii, pepperoni]);
+    ///
+    /// // Query for pizzas with the name "pasta salad".
+    /// let mut pasta_salad_results: Vec<Pizza> = client
+    ///     .query(&collection("pizzas"), filter("name", EqualTo("pasta salad"))?)
+    ///     .await?
+    ///     .try_collect()
+    ///     .await?;
+    ///
+    /// // We expect no results
+    /// assert_eq!(pasta_salad_results, vec![]);
+    /// # Ok(())
+    /// # }
+    pub async fn query<'de, T: Deserialize<'de>>(
+        &mut self,
+        collection: &CollectionReference,
+        filter: Filter,
+    ) -> Result<FirebaseStream<T, FirebaseError>, FirebaseError> {
+        let parent = collection
+            .parent()
+            .map(|p| self.get_name_with(p))
+            .unwrap_or_else(|| self.root_resource_path.clone());
+
+        let structured_query = StructuredQuery {
+            select: None,
+            from: vec![CollectionSelector {
+                collection_id: collection.name().to_string(),
+                // Setting all_descendants to false means we are only querying
+                // the collection that is a direct child of the parent.
+                all_descendants: false,
+            }],
+            r#where: Some(filter.into()),
+            order_by: vec![],
+            start_at: None,
+            end_at: None,
+            offset: 0,
+            limit: None,
+        };
+
+        let request = RunQueryRequest {
+            parent,
+            query_type: Some(QueryType::StructuredQuery(structured_query)),
+            consistency_selector: None,
+        };
+
+        let res = self
+            .client
+            .run_query(request)
+            .await
+            .context("Failed to run query")?;
+
+        let doc_stream = res
+            .into_inner()
+            // Some of the "results" coming from the gRPC stream don't represent
+            // search hits but rather information about query progress. We just
+            // ignore those items.
+            .skip_while(|res| match res {
+                Ok(inner) => future::ready(inner.document.is_none()),
+                Err(_) => future::ready(false),
+            })
+            .map(|res| {
+                dbg!(&res);
+
+                let doc = res
+                    .context("Error response in query")?
+                    .document
+                    .context("No document in response - illegal state")?;
+
+                let deserialized = deserialize_firestore_document::<T>(doc)?;
+
+                Ok(deserialized)
+            });
+
+        Ok(doc_stream.boxed())
     }
 
     fn get_name_with(&self, item: impl Display) -> String {
