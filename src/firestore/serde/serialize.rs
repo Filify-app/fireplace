@@ -31,6 +31,11 @@ pub(crate) fn serialize_to_document<T: Serialize>(
     }
 }
 
+pub(crate) fn serialize_to_value_type<T: Serialize>(value: &T) -> Result<ValueType, Error> {
+    let value_type = serialize(value)?;
+    Ok(value_type)
+}
+
 struct FirestoreValueSerializer;
 
 impl FirestoreValueSerializer {
