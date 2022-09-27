@@ -1,5 +1,5 @@
 use firebase_admin_rs::{
-    firestore::{client::FirestoreClient, reference::CollectionReference},
+    firestore::{client::FirestoreClient, collection},
     token::{FirebaseTokenProvider, ServiceAccount},
 };
 
@@ -13,7 +13,7 @@ async fn main() {
         .await
         .unwrap();
 
-    let doc_ref = CollectionReference::new("greetings").doc("does-it-work?");
+    let doc_ref = collection("greetings").doc("does-it-work?");
     let doc = serde_json::json!({ "message": "Yes indeed!".to_string() });
 
     client.set_document(&doc_ref, &doc).await.unwrap();
