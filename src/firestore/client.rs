@@ -565,13 +565,11 @@ impl FirestoreClient {
             // Some of the "results" coming from the gRPC stream don't represent
             // search hits but rather information about query progress. We just
             // ignore those items.
-            .skip_while(|res| match res {
-                Ok(inner) => future::ready(inner.document.is_none()),
+            .filter(|res| match res {
+                Ok(inner) => future::ready(inner.document.is_some()),
                 Err(_) => future::ready(false),
             })
             .map(|res| {
-                dbg!(&res);
-
                 let doc = res
                     .context("Error response in query")?
                     .document
