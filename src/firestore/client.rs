@@ -91,8 +91,8 @@ impl FirestoreClient {
     /// # #[tokio::main]
     /// # async fn main() {
     /// # use serde::{Serialize, Deserialize};
-    /// # use firebase_admin_rs::firestore::collection;
-    /// # let mut client = firebase_admin_rs::firestore::test_helpers::initialise().await.unwrap();
+    /// # use fireblaze::firestore::collection;
+    /// # let mut client = fireblaze::firestore::test_helpers::initialise().await.unwrap();
     /// #
     /// #[derive(Debug, Serialize, Deserialize, PartialEq)]
     /// struct Person {
@@ -163,8 +163,8 @@ impl FirestoreClient {
     /// ```
     /// # #[tokio::main]
     /// # async fn main() {
-    /// # use firebase_admin_rs::firestore::collection;
-    /// # let mut client = firebase_admin_rs::firestore::test_helpers::initialise().await.unwrap();
+    /// # use fireblaze::firestore::collection;
+    /// # let mut client = fireblaze::firestore::test_helpers::initialise().await.unwrap();
     /// #
     /// let collection_ref = collection("greetings");
     /// let doc_to_create = serde_json::json!({ "message": "Hi Mom!" });
@@ -196,8 +196,8 @@ impl FirestoreClient {
     /// ```
     /// # #[tokio::main]
     /// # async fn main() {
-    /// # use firebase_admin_rs::{firestore::collection, error::FirebaseError};
-    /// # let mut client = firebase_admin_rs::firestore::test_helpers::initialise().await.unwrap();
+    /// # use fireblaze::{firestore::collection, error::FirebaseError};
+    /// # let mut client = fireblaze::firestore::test_helpers::initialise().await.unwrap();
     /// #
     /// let collection_ref = collection("greetings");
     /// let doc_to_create = serde_json::json!({ "message": "Hi Mom!" });
@@ -276,8 +276,8 @@ impl FirestoreClient {
     /// ```
     /// # #[tokio::main]
     /// # async fn main() {
-    /// # use firebase_admin_rs::firestore::collection;
-    /// # let mut client = firebase_admin_rs::firestore::test_helpers::initialise().await.unwrap();
+    /// # use fireblaze::firestore::collection;
+    /// # let mut client = fireblaze::firestore::test_helpers::initialise().await.unwrap();
     /// #
     /// let doc_ref = collection("greetings").doc("some-doc-id-to-set");
     /// let doc = serde_json::json!({ "message": "Hello, world!".to_string() });
@@ -346,8 +346,8 @@ impl FirestoreClient {
     /// # #[tokio::main]
     /// # async fn main() {
     /// # use serde::{Deserialize, Serialize};
-    /// # use firebase_admin_rs::firestore::collection;
-    /// # let mut client = firebase_admin_rs::firestore::test_helpers::initialise().await.unwrap();
+    /// # use fireblaze::firestore::collection;
+    /// # let mut client = fireblaze::firestore::test_helpers::initialise().await.unwrap();
     /// #
     /// #[derive(Debug, Serialize, Deserialize, PartialEq)]
     /// struct TestType {
@@ -453,11 +453,11 @@ impl FirestoreClient {
     /// ```
     /// # #[tokio::main]
     /// # async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    /// # use firebase_admin_rs::firestore::collection;
+    /// # use fireblaze::firestore::collection;
     /// # use serde::{Deserialize, Serialize};
-    /// # let mut client = firebase_admin_rs::firestore::test_helpers::initialise().await?;
+    /// # let mut client = fireblaze::firestore::test_helpers::initialise().await?;
     /// #
-    /// use firebase_admin_rs::firestore::query::{filter, ArrayContains, EqualTo};
+    /// use fireblaze::firestore::query::{filter, ArrayContains, EqualTo};
     /// use futures::TryStreamExt;
     ///
     /// #[derive(Debug, Serialize, Deserialize, PartialEq, Clone)]

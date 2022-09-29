@@ -1,4 +1,4 @@
-use firebase_admin_rs::{
+use fireblaze::{
     firestore::{client::FirestoreClient, collection},
     token::{FirebaseTokenProvider, ServiceAccount},
 };

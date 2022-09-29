@@ -1,4 +1,4 @@
-# Firebase Admin SDK
+# Fireblaze
 
 This is a home-made client for Firebase's Admin SDK that seeks to provide a user friendly interface to interact with Firestore, Firebase Auth, and similar.
 

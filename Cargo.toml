@@ -1,5 +1,5 @@
 [package]
-name = "firebase_admin_rs"
+name = "fireblaze"
 version = "0.1.0"
 edition = "2021"
 
