@@ -4,9 +4,25 @@
 
 This is a home-made client for Firebase's Admin SDK that seeks to provide a user friendly interface to interact with Firestore, Firebase Auth, and similar.
 
+## Docs
+
+```sh
+cargo doc --open
+```
+
+## Examples
+
+Check out the `examples` directory. Test-run the hello-world example with:
+
+```
+cargo run --example hello
+```
+
+This requires you to fetch your service account JSON file as described below.
+
 ## Setup
 
-You need to get your service account JSON file that will be used to authorize requests to Firebase. This file will also decide which project on Firebase to send requests to.
+The easiest way is to get your service account JSON file that can be used to authorize requests to Firebase. This file will also decide which project on Firebase to send requests to.
 
 Your JSON file will look something like this:
 
@@ -29,5 +45,12 @@ Your JSON file will look something like this:
 
 Currently I've made the tests use a real in-the-cloud Firebase project to ensure that everything works as expected. However, this has the consequence that you need to set up access and be careful about tests affecting each other.
 
-These tests require a `test-service-account.json` to be present in the project root that can provide access to that project.
+For testing, the following environment variables need to be set so the tests can connect to the cloud:
 
+- `FIREBASE_PROJECT_ID`
+- `FIREBASE_CLIENT_ID`
+- `FIREBASE_CLIENT_EMAIL`
+- `FIREBASE_PRIVATE_KEY`
+- `FIREBASE_PRIVATE_KEY_ID`
+
+They should correspond to their values from the service account JSON file.

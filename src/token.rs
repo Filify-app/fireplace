@@ -12,11 +12,11 @@ use crate::{error::FirebaseError, utils::get_unix_time};
 /// avoid accidentally leaking credentials.
 #[derive(Deserialize)]
 pub struct ServiceAccount {
-    project_id: String,
-    private_key: String,
-    private_key_id: String,
-    client_email: String,
-    client_id: String,
+    pub project_id: String,
+    pub private_key: String,
+    pub private_key_id: String,
+    pub client_email: String,
+    pub client_id: String,
 }
 
 impl ServiceAccount {
@@ -28,10 +28,6 @@ impl ServiceAccount {
             .context("Could not extract service account details from file")?;
 
         Ok(service_account)
-    }
-
-    pub fn project_id(&self) -> &str {
-        &self.project_id
     }
 }
 

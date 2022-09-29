@@ -13,4 +13,5 @@ Cargo.lock
 *.pdb
 
 *service-account.json
+setup-env.sh
 

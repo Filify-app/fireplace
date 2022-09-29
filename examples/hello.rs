@@ -8,7 +8,7 @@ async fn main() {
     // Load the service account, which specifies which project we will connect
     // to and the secret keys used for authentication.
     let service_account = ServiceAccount::from_file("./test-service-account.json").unwrap();
-    let project_id = service_account.project_id().to_string();
+    let project_id = service_account.project_id.clone();
 
     // Create the token provider that will generate JWTs for us automatically.
     let token_provider = FirebaseTokenProvider::new(service_account);
