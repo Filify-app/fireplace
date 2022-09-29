@@ -1,5 +1,7 @@
 # Fireblaze
 
+*The bestest, best Firebase library for Rust because there are no other libraries.*
+
 This is a home-made client for Firebase's Admin SDK that seeks to provide a user friendly interface to interact with Firestore, Firebase Auth, and similar.
 
 ## Setup
