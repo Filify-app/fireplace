@@ -19,7 +19,7 @@ use firestore_grpc::{
     },
     v1::GetDocumentRequest,
 };
-use futures::{Stream, StreamExt};
+use futures::{Stream, StreamExt, TryStreamExt};
 use serde::{Deserialize, Serialize};
 
 use crate::error::FirebaseError;
@@ -527,6 +527,70 @@ impl FirestoreClient {
         collection: &CollectionReference,
         filter: Filter,
     ) -> Result<FirebaseStream<T, FirebaseError>, FirebaseError> {
+        self.query_internal(collection, filter, None).await
+    }
+
+    /// The same as [`query`](Self::query), but only returns the first result.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # #[tokio::main]
+    /// # async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    /// # use fireplace::firestore::collection;
+    /// # use serde::{Deserialize, Serialize};
+    /// # let mut client = fireplace::firestore::test_helpers::initialise().await?;
+    /// #
+    /// use fireplace::firestore::query::{filter, EqualTo};
+    ///
+    /// #[derive(Debug, Serialize, Deserialize, PartialEq, Clone)]
+    /// struct Pizza {
+    ///     name: String,
+    /// }
+    ///
+    /// let hawaii = Pizza {
+    ///     name: "Hawaii".into(),
+    /// };
+    ///
+    /// client
+    ///     .set_document(&collection("pizzas").doc("hawaii"), &hawaii)
+    ///     .await?;
+    ///
+    /// // Query for the Hawaii pizza by name
+    /// let mut hawaii_result: Option<Pizza> = client
+    ///     .query_one(
+    ///         &collection("pizzas"),
+    ///         filter("name", EqualTo("Hawaii"))?,
+    ///     )
+    ///     .await?;
+    ///
+    /// // We expect a single search hit - the hawaii pizza.
+    /// assert_eq!(hawaii_result, Some(hawaii.clone()));
+    ///
+    /// // Query for pizzas with the name "pasta salad".
+    /// let mut pasta_salad_result: Option<Pizza> = client
+    ///     .query_one(&collection("pizzas"), filter("name", EqualTo("pasta salad"))?)
+    ///     .await?;
+    ///
+    /// // We expect no results
+    /// assert_eq!(pasta_salad_result, None);
+    /// # Ok(())
+    /// # }
+    pub async fn query_one<'de, T: Deserialize<'de>>(
+        &mut self,
+        collection: &CollectionReference,
+        filter: Filter,
+    ) -> Result<Option<T>, FirebaseError> {
+        let mut stream = self.query_internal(collection, filter, Some(1)).await?;
+        stream.try_next().await
+    }
+
+    async fn query_internal<'de, T: Deserialize<'de>>(
+        &mut self,
+        collection: &CollectionReference,
+        filter: Filter,
+        limit: Option<i32>,
+    ) -> Result<FirebaseStream<T, FirebaseError>, FirebaseError> {
         let parent = collection
             .parent()
             .map(|p| self.get_name_with(p))
@@ -545,7 +609,7 @@ impl FirestoreClient {
             start_at: None,
             end_at: None,
             offset: 0,
-            limit: None,
+            limit,
         };
 
         let request = RunQueryRequest {
