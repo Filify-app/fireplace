@@ -1,6 +1,6 @@
-//! # Fireblaze
+//! # Fireplace
 //!
-//! Fireblaze is a client for Firebase that seeks to provide a user-friendly
+//! Fireplace is a client for Firebase that seeks to provide a user-friendly
 //! interface to interact with Firestore, Firebase Auth, and similar.
 
 pub mod error;

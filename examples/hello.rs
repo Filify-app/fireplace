@@ -1,4 +1,4 @@
-use fireblaze::{
+use fireplace::{
     firestore::{client::FirestoreClient, collection},
     token::{FirebaseTokenProvider, ServiceAccount},
 };

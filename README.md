@@ -1,4 +1,4 @@
-# Fireblaze
+# Fireplace
 
 *The bestest, best Firebase library for Rust because there are no other libraries.*
 
