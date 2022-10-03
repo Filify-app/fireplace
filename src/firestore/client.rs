@@ -39,7 +39,20 @@ const DOMAIN: &str = "firestore.googleapis.com";
 
 pub struct FirestoreClient {
     client: GrpcFirestoreClient<InterceptedService<Channel, InterceptorFunction>>,
+    grpc_channel: Channel,
+    project_id: String,
+    token_provider: FirebaseTokenProvider,
     root_resource_path: String,
+}
+
+impl Clone for FirestoreClient {
+    fn clone(&self) -> Self {
+        Self::from_channel(
+            self.grpc_channel.clone(),
+            self.token_provider.clone(),
+            &self.project_id,
+        )
+    }
 }
 
 fn create_auth_interceptor(mut token_provider: FirebaseTokenProvider) -> InterceptorFunction {
@@ -72,15 +85,30 @@ impl FirestoreClient {
 
         let channel = endpoint?.connect().await?;
 
-        let service =
-            GrpcFirestoreClient::with_interceptor(channel, create_auth_interceptor(token_provider));
+        Ok(Self::from_channel(channel, token_provider, project_id))
+    }
+
+    fn from_channel(
+        channel: Channel,
+        token_provider: FirebaseTokenProvider,
+        project_id: &str,
+    ) -> Self {
+        // Cloning a channel is supposedly very cheap and encouraged be tonic's
+        // documentation.
+        let service = GrpcFirestoreClient::with_interceptor(
+            channel.clone(),
+            create_auth_interceptor(token_provider.clone()),
+        );
 
         let resource_path = format!("projects/{}/databases/(default)/documents", project_id);
 
-        Ok(Self {
+        Self {
             client: service,
+            project_id: project_id.to_string(),
+            token_provider,
+            grpc_channel: channel,
             root_resource_path: resource_path,
-        })
+        }
     }
 
     /// Retrieve a document from Firestore at the given document reference.

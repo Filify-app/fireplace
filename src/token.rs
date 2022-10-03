@@ -10,7 +10,7 @@ use crate::{error::FirebaseError, utils::get_unix_time};
 ///
 /// `Serialize`, `Display`, and `Debug` are intentionally not implemented to
 /// avoid accidentally leaking credentials.
-#[derive(Deserialize)]
+#[derive(Deserialize, Clone)]
 pub struct ServiceAccount {
     pub project_id: String,
     pub private_key: String,
@@ -31,11 +31,13 @@ impl ServiceAccount {
     }
 }
 
+#[derive(Clone)]
 pub struct FirebaseTokenProvider {
     service_account: ServiceAccount,
     current_token: Option<Token>,
 }
 
+#[derive(Clone)]
 struct Token {
     jwt: String,
     /// The timestamp at which the token expires. Represented as seconds since
