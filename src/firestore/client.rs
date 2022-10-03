@@ -32,7 +32,7 @@ use super::serde::serialize_to_document;
 
 type FirebaseStream<T, E> = Pin<Box<dyn Stream<Item = Result<T, E>>>>;
 
-type InterceptorFunction = Box<dyn FnMut(Request<()>) -> Result<Request<()>, Status>>;
+type InterceptorFunction = Box<dyn FnMut(Request<()>) -> Result<Request<()>, Status> + Send>;
 
 const URL: &str = "https://firestore.googleapis.com";
 const DOMAIN: &str = "firestore.googleapis.com";
@@ -585,5 +585,14 @@ impl FirestoreClient {
 
     fn get_name_with(&self, item: impl Display) -> String {
         format!("{}/{}", self.root_resource_path, item)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn implements_send() {
+        fn assert_send<T: Send>() {}
+        assert_send::<super::FirestoreClient>();
     }
 }
