@@ -443,7 +443,7 @@ impl FirestoreClient {
         Ok(deserialized)
     }
 
-    /// Query a collection for documents that fulfil the given criteria.
+    /// Query a collection for documents that fulfill the given criteria.
     ///
     /// Returns a [`Stream`](futures::stream::Stream) of query results,
     /// allowing you to process results as they are coming in.
