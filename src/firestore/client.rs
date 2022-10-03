@@ -30,7 +30,7 @@ use super::query::Filter;
 use super::reference::{CollectionReference, DocumentReference};
 use super::serde::serialize_to_document;
 
-type FirebaseStream<T, E> = Pin<Box<dyn Stream<Item = Result<T, E>>>>;
+type FirebaseStream<T, E> = Pin<Box<dyn Stream<Item = Result<T, E>> + Send>>;
 
 type InterceptorFunction = Box<dyn FnMut(Request<()>) -> Result<Request<()>, Status> + Send>;
 
