@@ -5,6 +5,9 @@ pub enum FirebaseError {
     #[error("{0}")]
     DocumentAlreadyExists(String),
 
+    #[error("Email already exists")]
+    EmailAlreadyExists,
+
     #[error(transparent)]
     FirestoreSerdeError(#[from] crate::firestore::serde::Error),
 
