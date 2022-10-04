@@ -2,7 +2,7 @@ use anyhow::Context;
 
 use crate::error::FirebaseError;
 
-use self::{error::AuthApiError, models::SignUpResponse};
+use self::{error::AuthApiErrorResponse, models::SignUpResponse};
 
 mod error;
 mod models;
@@ -70,7 +70,7 @@ impl FirebaseAuthClient {
             Ok(new_user)
         } else {
             let err = res
-                .json::<AuthApiError>()
+                .json::<AuthApiErrorResponse>()
                 .await
                 .context("Failed to read response JSON")?
                 .into();

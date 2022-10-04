@@ -4,7 +4,7 @@ use serde::Deserialize;
 use crate::error::FirebaseError;
 
 #[derive(Debug, Deserialize)]
-pub(crate) struct AuthApiError {
+pub(crate) struct AuthApiErrorResponse {
     error: AuthApiErrorInfo,
 }
 
@@ -22,8 +22,8 @@ pub struct SpecificAuthApiErrorInfo {
     pub reason: String,
 }
 
-impl From<AuthApiError> for FirebaseError {
-    fn from(err: AuthApiError) -> Self {
+impl From<AuthApiErrorResponse> for FirebaseError {
+    fn from(err: AuthApiErrorResponse) -> Self {
         match err.error.message.as_ref() {
             "EMAIL_EXISTS" => FirebaseError::EmailAlreadyExists,
             _ => anyhow!("{:?}", err).into(),
