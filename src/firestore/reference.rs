@@ -1,14 +1,14 @@
-use std::rc::Rc;
+use std::sync::Arc;
 
 pub fn collection(name: impl Into<String>) -> CollectionReference {
     CollectionReference::new(name)
 }
 
 #[derive(Debug, Clone)]
-pub struct DocumentReference(Rc<DocumentReferenceInner>);
+pub struct DocumentReference(Arc<DocumentReferenceInner>);
 
 #[derive(Debug, Clone)]
-pub struct CollectionReference(Rc<CollectionReferenceInner>);
+pub struct CollectionReference(Arc<CollectionReferenceInner>);
 
 #[derive(Debug, Clone)]
 struct CollectionReferenceInner {
@@ -24,14 +24,14 @@ struct DocumentReferenceInner {
 
 impl CollectionReference {
     pub fn new(collection_name: impl Into<String>) -> Self {
-        Self(Rc::new(CollectionReferenceInner {
+        Self(Arc::new(CollectionReferenceInner {
             parent: None,
             name: collection_name.into(),
         }))
     }
 
     pub fn doc(&self, id: impl Into<String>) -> DocumentReference {
-        DocumentReference(Rc::new(DocumentReferenceInner {
+        DocumentReference(Arc::new(DocumentReferenceInner {
             parent: self.clone(),
             id: id.into(),
         }))
@@ -48,7 +48,7 @@ impl CollectionReference {
 
 impl DocumentReference {
     pub fn collection(&self, name: impl Into<String>) -> CollectionReference {
-        CollectionReference(Rc::new(CollectionReferenceInner {
+        CollectionReference(Arc::new(CollectionReferenceInner {
             parent: Some(self.clone()),
             name: name.into(),
         }))
