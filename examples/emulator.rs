@@ -31,8 +31,7 @@ async fn main() {
     //     }
     //   }
     // }
-
-    // Configure the client - we just want the default.
+    // Important note: you must use 127.0.0.1 instead of localhost.
     let client_options = FirestoreClientOptions::default().host_url("https://127.0.0.1:8081");
 
     // Finally, create a client for Firestore.
