@@ -9,17 +9,17 @@ pub(crate) struct AuthApiError {
 }
 
 #[derive(Debug, Deserialize)]
-pub(crate) struct AuthApiErrorInfo {
-    message: String,
-    errors: Vec<SpecificAuthApiErrorInfo>,
-    code: u16,
+pub struct AuthApiErrorInfo {
+    pub message: String,
+    pub errors: Vec<SpecificAuthApiErrorInfo>,
+    pub code: u16,
 }
 
 #[derive(Debug, Deserialize)]
-struct SpecificAuthApiErrorInfo {
-    domain: String,
-    message: String,
-    reason: String,
+pub struct SpecificAuthApiErrorInfo {
+    pub domain: String,
+    pub message: String,
+    pub reason: String,
 }
 
 impl From<AuthApiError> for FirebaseError {
