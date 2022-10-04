@@ -30,9 +30,3 @@ impl From<AuthApiError> for FirebaseError {
         }
     }
 }
-
-impl<T> From<AuthApiError> for Result<T, FirebaseError> {
-    fn from(err: AuthApiError) -> Self {
-        Err(err.into())
-    }
-}

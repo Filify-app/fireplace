@@ -37,13 +37,18 @@ impl FirebaseAuthClient {
         format!("{}:{}", self.api_url, path.as_ref())
     }
 
+    #[tracing::instrument(name = "Sign up with email", skip(self, email, password))]
     pub async fn sign_up_with_email_and_password(
         &self,
         email: impl Into<String>,
         password: impl Into<String>,
     ) -> Result<SignUpResponse, FirebaseError> {
+        let email = email.into();
+
+        tracing::info!("Signing up user with email '{}'", &email);
+
         let body = serde_json::json!({
-            "email": email.into(),
+            "email": email,
             "password": password.into(),
             "returnSecureToken": true
         });
@@ -60,12 +65,19 @@ impl FirebaseAuthClient {
             let new_user: SignUpResponse =
                 res.json().await.context("Failed to read response JSON")?;
 
+            tracing::info!("Created user with id '{}'", &new_user.user_uid);
+
             Ok(new_user)
         } else {
-            res.json::<AuthApiError>()
+            let err = res
+                .json::<AuthApiError>()
                 .await
                 .context("Failed to read response JSON")?
-                .into()
+                .into();
+
+            tracing::error!("Failed with '{}'", &err);
+
+            Err(err)
         }
     }
 }
