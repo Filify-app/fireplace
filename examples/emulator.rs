@@ -16,8 +16,23 @@ async fn main() {
     // Create the token provider that will generate JWTs for us automatically.
     let token_provider = FirebaseTokenProvider::new(service_account);
 
-    // Configure the client - we just want the default.
-    let client_options = FirestoreClientOptions::default();
+    // This assumes that a local Firebase emulator is running on port with a
+    // config similar to this:
+    // {
+    //   "emulators": {
+    //     "firestore": {
+    //       "port": 8081
+    //     },
+    //     "auth": {
+    //       "port": 9099
+    //     },
+    //     "ui": {
+    //       "enabled": true
+    //     }
+    //   }
+    // }
+    // Important note: you must use 127.0.0.1 instead of localhost.
+    let client_options = FirestoreClientOptions::default().host_url("https://127.0.0.1:8081");
 
     // Finally, create a client for Firestore.
     let mut client = FirestoreClient::initialise(&project_id, token_provider, client_options)
