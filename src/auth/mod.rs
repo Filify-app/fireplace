@@ -5,7 +5,8 @@ use crate::error::FirebaseError;
 use self::{error::AuthApiErrorResponse, models::SignUpResponse};
 
 mod error;
-mod models;
+pub mod models;
+pub mod test_helpers;
 
 pub struct FirebaseAuthClient {
     client: reqwest::Client,
@@ -37,6 +38,44 @@ impl FirebaseAuthClient {
         format!("{}:{}", self.api_url, path.as_ref())
     }
 
+    /// Creates a new user with an email address and password.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # #[tokio::main]
+    /// # async fn main() {
+    /// # use ulid::Ulid;
+    /// # let auth_client = fireplace::auth::test_helpers::initialise().unwrap();
+    /// #
+    /// // Generate some random email address and password
+    /// let email = format!("{}@example.com", Ulid::new());
+    /// let password = Ulid::new().to_string();
+    ///
+    /// // Sign up
+    /// let new_user = auth_client
+    ///     .sign_up_with_email_and_password(&email, &password)
+    ///     .await
+    ///     .unwrap();
+    ///
+    /// // We get back info about the new user, including its ID and some
+    /// // tokens the user can use to authenticate with Firebase.
+    /// println!("Created user with id '{}'", &new_user.user_uid);
+    ///
+    /// // It's worth noting that Firebase Auth turns the email into lowercase.
+    /// assert_eq!(email.to_lowercase(), new_user.email);
+    ///
+    /// // You cannot create two users with the same email
+    /// let another_new_user_result = auth_client
+    ///     .sign_up_with_email_and_password(&email, &password)
+    ///     .await;
+    ///
+    /// assert!(matches!(
+    ///     another_new_user_result,
+    ///     Err(FirebaseError::EmailAlreadyExists)
+    /// ));
+    /// # }
+    /// ```
     #[tracing::instrument(name = "Sign up with email", skip(self, email, password))]
     pub async fn sign_up_with_email_and_password(
         &self,
@@ -81,8 +120,3 @@ impl FirebaseAuthClient {
         }
     }
 }
-
-// TODO:
-// - test happy path
-// - test unhappy path
-// - doctest and doc explanation
