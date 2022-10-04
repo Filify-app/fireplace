@@ -5,6 +5,8 @@ use crate::{
     token::{FirebaseTokenProvider, ServiceAccount},
 };
 
+use super::client::FirestoreClientOptions;
+
 pub async fn initialise() -> Result<FirestoreClient, anyhow::Error> {
     let service_account = ServiceAccount {
         project_id: env::var("FIREBASE_PROJECT_ID")?,
@@ -17,7 +19,9 @@ pub async fn initialise() -> Result<FirestoreClient, anyhow::Error> {
     let project_id = service_account.project_id.clone();
     let token_provider = FirebaseTokenProvider::new(service_account);
 
-    let client = FirestoreClient::initialise(&project_id, token_provider)
+    let client_options = FirestoreClientOptions::default();
+
+    let client = FirestoreClient::initialise(&project_id, token_provider, client_options)
         .await
         .unwrap();
 

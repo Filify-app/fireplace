@@ -1,5 +1,8 @@
 use fireplace::{
-    firestore::{client::FirestoreClient, collection},
+    firestore::{
+        client::{FirestoreClient, FirestoreClientOptions},
+        collection,
+    },
     token::{FirebaseTokenProvider, ServiceAccount},
 };
 
@@ -13,8 +16,11 @@ async fn main() {
     // Create the token provider that will generate JWTs for us automatically.
     let token_provider = FirebaseTokenProvider::new(service_account);
 
+    // Configure the client - we just want the default.
+    let client_options = FirestoreClientOptions::default();
+
     // Finally, create a client for Firestore.
-    let mut client = FirestoreClient::initialise(&project_id, token_provider)
+    let mut client = FirestoreClient::initialise(&project_id, token_provider, client_options)
         .await
         .unwrap();
 

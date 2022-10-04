@@ -12,10 +12,7 @@ use firestore_grpc::v1::{
 };
 use firestore_grpc::{
     tonic::{
-        codegen::InterceptedService,
-        metadata::MetadataValue,
-        transport::{Channel, ClientTlsConfig},
-        Request, Status,
+        codegen::InterceptedService, metadata::MetadataValue, transport::Channel, Request, Status,
     },
     v1::GetDocumentRequest,
 };
@@ -30,14 +27,16 @@ use super::query::Filter;
 use super::reference::{CollectionReference, DocumentReference};
 use super::serde::serialize_to_document;
 
+mod options;
+
+pub use options::FirestoreClientOptions;
+
 type FirebaseStream<T, E> = Pin<Box<dyn Stream<Item = Result<T, E>> + Send>>;
 
 type InterceptorFunction = Box<dyn FnMut(Request<()>) -> Result<Request<()>, Status> + Send>;
 
-const URL: &str = "https://firestore.googleapis.com";
-const DOMAIN: &str = "firestore.googleapis.com";
-
 pub struct FirestoreClient {
+    options: FirestoreClientOptions,
     client: GrpcFirestoreClient<InterceptedService<Channel, InterceptorFunction>>,
     grpc_channel: Channel,
     project_id: String,
@@ -51,6 +50,7 @@ impl Clone for FirestoreClient {
             self.grpc_channel.clone(),
             self.token_provider.clone(),
             &self.project_id,
+            self.options.clone(),
         )
     }
 }
@@ -79,19 +79,27 @@ impl FirestoreClient {
     pub async fn initialise(
         project_id: &str,
         token_provider: FirebaseTokenProvider,
+        options: FirestoreClientOptions,
     ) -> Result<Self, FirebaseError> {
-        let endpoint =
-            Channel::from_static(URL).tls_config(ClientTlsConfig::new().domain_name(DOMAIN));
+        let channel = Channel::from_shared(options.host_url.clone())
+            .context("Failed to create gRPC channel")?
+            .connect()
+            .await
+            .context("Failed to create channel to endpoint")?;
 
-        let channel = endpoint?.connect().await?;
-
-        Ok(Self::from_channel(channel, token_provider, project_id))
+        Ok(Self::from_channel(
+            channel,
+            token_provider,
+            project_id,
+            options,
+        ))
     }
 
     fn from_channel(
         channel: Channel,
         token_provider: FirebaseTokenProvider,
         project_id: &str,
+        options: FirestoreClientOptions,
     ) -> Self {
         // Cloning a channel is supposedly very cheap and encouraged be tonic's
         // documentation.
@@ -108,6 +116,7 @@ impl FirestoreClient {
             token_provider,
             grpc_channel: channel,
             root_resource_path: resource_path,
+            options,
         }
     }
 
