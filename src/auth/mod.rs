@@ -49,6 +49,7 @@ impl FirebaseAuthClient {
     /// # #[tokio::main]
     /// # async fn main() {
     /// # use ulid::Ulid;
+    /// # use fireplace::error::FirebaseError;
     /// # let auth_client = fireplace::auth::test_helpers::initialise().unwrap();
     /// #
     /// // Generate some random email address and password
