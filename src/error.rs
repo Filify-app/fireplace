@@ -8,6 +8,9 @@ pub enum FirebaseError {
     #[error("Email already exists")]
     EmailAlreadyExists,
 
+    #[error("Failed to validate token: {0}")]
+    ValidateTokenError(anyhow::Error),
+
     #[error(transparent)]
     FirestoreSerdeError(#[from] crate::firestore::serde::Error),
 

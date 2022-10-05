@@ -2,19 +2,21 @@ use anyhow::Context;
 
 use crate::error::FirebaseError;
 
-use self::{error::AuthApiErrorResponse, models::SignUpResponse};
+use self::{error::AuthApiErrorResponse, models::SignUpResponse, token::IdTokenClaims};
 
 mod error;
 pub mod models;
 pub mod test_helpers;
+mod token;
 
 pub struct FirebaseAuthClient {
     client: reqwest::Client,
     api_url: String,
+    token_handler: token::TokenHandler,
 }
 
 impl FirebaseAuthClient {
-    pub fn new(api_key: &str) -> Result<Self, FirebaseError> {
+    pub fn new(project_id: String, api_key: &str) -> Result<Self, FirebaseError> {
         let mut default_headers = reqwest::header::HeaderMap::new();
 
         let mut api_key_header =
@@ -29,6 +31,7 @@ impl FirebaseAuthClient {
             .context("Failed to create HTTP client")?;
 
         Ok(Self {
+            token_handler: token::TokenHandler::new(project_id, client.clone()),
             client,
             api_url: "https://identitytoolkit.googleapis.com/v1/accounts".to_string(),
         })
@@ -118,5 +121,19 @@ impl FirebaseAuthClient {
 
             Err(err)
         }
+    }
+
+    #[tracing::instrument(name = "Decode ID token", skip(self, token))]
+    pub async fn decode_id_token(
+        &mut self,
+        token: impl AsRef<str>,
+    ) -> Result<IdTokenClaims, FirebaseError> {
+        let id_token_claims = self
+            .token_handler
+            .decode_id_token(token.as_ref())
+            .await
+            .map_err(FirebaseError::ValidateTokenError)?;
+
+        Ok(id_token_claims)
     }
 }
