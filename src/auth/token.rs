@@ -69,9 +69,6 @@ struct PublicKeys {
 }
 
 impl PublicKeys {
-    // TODO: Use the value of max-age in the Cache-Control header of the response from that endpoint to know when to refresh the public keys.
-    const UPDATE_INTERVAL: Duration = Duration::from_secs(5 * 60);
-
     fn new(http_client: reqwest::Client) -> Self {
         Self {
             public_key_map: None,
@@ -109,14 +106,14 @@ impl PublicKeys {
     fn should_update(&self) -> bool {
         match &self.public_key_map {
             None => true,
-            Some(pkm) if pkm.fetched_at.elapsed() > Self::UPDATE_INTERVAL => true,
+            Some(pkm) if Instant::now() >= pkm.update_by => true,
             _ => false,
         }
     }
 }
 
 struct PublicKeyMap {
-    fetched_at: Instant,
+    update_by: Instant,
     keys: HashMap<String, String>,
 }
 
@@ -127,13 +124,32 @@ impl PublicKeyMap {
     async fn fetch(client: &reqwest::Client) -> Result<Self, anyhow::Error> {
         tracing::debug!("Refreshing x509 public key certificates from Google");
 
-        let certificates: HashMap<String, String> = client
-            .get(Self::PUBLIC_KEYS_URL)
-            .send()
-            .await?
-            .json()
-            .await?;
+        let res = client.get(Self::PUBLIC_KEYS_URL).send().await?;
 
+        anyhow::ensure!(
+            res.status().is_success(),
+            "Google PKI returned status {}",
+            res.status()
+        );
+
+        let headers = res.headers();
+
+        let max_age = headers
+            .get(reqwest::header::CACHE_CONTROL)
+            .map(|h| h.to_str())
+            .transpose()
+            .context("Invalid Cache-Control header")?
+            .and_then(|h| h.split(',').find(|s| s.trim().starts_with("max-age=")))
+            .map(|s| {
+                s.trim()
+                    .trim_start_matches("max-age=")
+                    .parse::<u64>()
+                    .map_err(|_| anyhow::anyhow!("Invalid max-age in Cache-Control header: {}", s))
+            })
+            .transpose()?
+            .unwrap_or(5 * 60);
+
+        let certificates = res.json::<HashMap<String, String>>().await?;
         let mut public_keys = HashMap::with_capacity(certificates.len());
 
         for (key_id, certificate_pem) in certificates {
@@ -144,7 +160,7 @@ impl PublicKeyMap {
         }
 
         Ok(Self {
-            fetched_at: Instant::now(),
+            update_by: Instant::now() + Duration::from_secs(max_age),
             keys: public_keys,
         })
     }
