@@ -5,7 +5,7 @@ use std::{
 
 use anyhow::Context;
 use jsonwebtoken::{DecodingKey, Validation};
-use serde::Deserialize;
+use serde::de::DeserializeOwned;
 
 pub(super) struct TokenHandler {
     public_keys: PublicKeys,
@@ -24,10 +24,10 @@ impl TokenHandler {
     ///
     /// Fails if the token is in a bad format, expired, not issued for this
     /// project, or if the signature is invalid.
-    pub(super) async fn decode_id_token(
+    pub(super) async fn decode_id_token<C: DeserializeOwned>(
         &mut self,
         token: &str,
-    ) -> Result<IdTokenClaims, anyhow::Error> {
+    ) -> Result<C, anyhow::Error> {
         let header = jsonwebtoken::decode_header(token)?;
 
         if header.alg != jsonwebtoken::Algorithm::RS256 {
@@ -51,7 +51,7 @@ impl TokenHandler {
             &self.project_id
         )]);
 
-        let decoded = jsonwebtoken::decode::<IdTokenClaims>(
+        let decoded = jsonwebtoken::decode(
             token,
             &DecodingKey::from_rsa_pem(public_key.as_ref())
                 .context("Invalid public key format in ID token")?,
@@ -163,11 +163,4 @@ impl PublicKeyMap {
             keys: public_keys,
         })
     }
-}
-
-#[derive(Debug, Deserialize)]
-pub struct IdTokenClaims {
-    pub user_id: String,
-    #[serde(flatten)]
-    pub other: HashMap<String, serde_json::Value>,
 }

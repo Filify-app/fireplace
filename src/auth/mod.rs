@@ -1,8 +1,9 @@
 use anyhow::Context;
+use serde::de::DeserializeOwned;
 
 use crate::error::FirebaseError;
 
-use self::{error::AuthApiErrorResponse, models::SignUpResponse, token::IdTokenClaims};
+use self::{error::AuthApiErrorResponse, models::SignUpResponse};
 
 mod error;
 pub mod models;
@@ -133,7 +134,14 @@ impl FirebaseAuthClient {
     ///
     /// The [Firebase API docs] list further requirements.
     ///
+    /// # Generic parameters
+    ///
+    /// The generic type parameter `C` is the format of the decoded JWT claims
+    /// that will be used for deserialization. See the examples below.
+    ///
     /// # Examples
+    ///
+    /// A valid token:
     ///
     /// ```
     /// # #[tokio::main]
@@ -147,12 +155,16 @@ impl FirebaseAuthClient {
     ///
     /// // Decode the ID token. If we get Ok back, we know it's valid and the
     /// // user is authenticated.
-    /// let decoded_token = auth_client.decode_id_token(signed_up_user.id_token).await?;
+    /// let decoded_token = auth_client
+    ///     .decode_id_token::<serde_json::Value>(&signed_up_user.id_token)
+    ///     .await?;
     ///
-    /// assert_eq!(decoded_token.user_id, signed_up_user.user_uid);
+    /// assert_eq!(signed_up_user.user_uid, decoded_token["user_id"].as_str().unwrap());
     /// # Ok(())
     /// # }
     /// ```
+    ///
+    /// An invalid token will result in an error:
     ///
     /// ```
     /// # #[tokio::main]
@@ -162,19 +174,67 @@ impl FirebaseAuthClient {
     /// // Some invalid ID token. It is expired, and it might be issued for a
     /// // different Firebase project.
     /// let id_token = "eyJhbGciOiJSUzI1NiIsImtpZCI6IjU4NWI5MGI1OWM2YjM2ZDNjOTBkZjBlOTEwNDQ1M2U2MmY4ODdmNzciLCJ0eXAiOiJKV1QifQ.eyJpc3MiOiJodHRwczovL3NlY3VyZXRva2VuLmdvb2dsZS5jb20vcnVzdC1hZG1pbi1zZGstdGVzdCIsImF1ZCI6InJ1c3QtYWRtaW4tc2RrLXRlc3QiLCJhdXRoX3RpbWUiOjE2NjQ5OTUwNjcsInVzZXJfaWQiOiJIRnRxZ0NQc0hTTTF5SngwUnVaY0ZXbVQ5TEMzIiwic3ViIjoiSEZ0cWdDUHNIU00xeUp4MFJ1WmNGV21UOUxDMyIsImlhdCI6MTY2NDk5NTA2NywiZXhwIjoxNjY0OTk4NjY3LCJlbWFpbCI6ImZzYWZhQHRlc3RwLmFwcCIsImVtYWlsX3ZlcmlmaWVkIjpmYWxzZSwiZmlyZWJhc2UiOnsiaWRlbnRpdGllcyI6eyJlbWFpbCI6WyJmc2FmYUB0ZXN0cC5hcHAiXX0sInNpZ25faW5fcHJvdmlkZXIiOiJwYXNzd29yZCJ9fQ.ImphBsbuXJOMKyZF21YIK0PQ4ZFwPDDfJ56wW1cJkKBUhGUICW9zNv2WgCuZ03XdfexYcGabUjetruOQBx9c9eSJsPZQdAblNYk9vcBbmpaxya55HNkSbp2ZfX5S_ReUSekjiGsd53qfRLOTHxu4m-LGddE2_lfz6Mx2IAf9ij6JjU-uc5w5klmT3OAUkxUBpPyAcocwHU0WqXuOYDBo-WRL8hC2CTgQ8o0Mo-wHBsIZ_IU_SkIHG7xl2oq91Gm7q227KX7j5LnNaOgM3GuCOajPzzyKzTKAcX2pCKlkyR1bQHuefzuyPF_RME0jroOuHZm031uW_v4rnMWO3HtmDw";
-    /// let decode_result = auth_client.decode_id_token(id_token).await;
+    /// let decode_result = auth_client
+    ///     .decode_id_token::<serde_json::Value>(id_token)
+    ///     .await;
     ///
     /// assert!(decode_result.is_err());
     /// # Ok(())
     /// # }
     /// ```
     ///
+    /// Deserializing to your own format:
+    ///
+    /// ```
+    /// # #[tokio::main]
+    /// # async fn main() -> Result<(), fireplace::error::FirebaseError> {
+    /// # use ulid::Ulid;
+    /// # let mut auth_client = fireplace::auth::test_helpers::initialise()?;
+    /// use serde::Deserialize;
+    ///
+    /// let id_token = auth_client
+    ///     .sign_up_with_email_and_password(format!("{}@example.com", Ulid::new()), Ulid::new())
+    ///     .await?
+    ///     .id_token;
+    ///
+    /// #[derive(Debug, Deserialize)]
+    /// struct Claims {
+    ///     user_id: String,
+    ///     email: String,
+    ///     firebase: FirebaseClaims,
+    /// }
+    ///
+    /// #[derive(Debug, Deserialize)]
+    /// struct FirebaseClaims {
+    ///     sign_in_provider: String,
+    /// }
+    ///
+    /// // We can make our own claims type and deserialize into that
+    /// let claims = auth_client.decode_id_token::<Claims>(&id_token).await?;
+    ///
+    /// // Or we can just use serde_json::Value:
+    /// let claims_json = auth_client
+    ///     .decode_id_token::<serde_json::Value>(&id_token)
+    ///     .await?;
+    ///
+    /// assert_eq!(claims.user_id, claims_json["user_id"].as_str().unwrap());
+    /// assert_eq!(claims.email, claims_json["email"].as_str().unwrap());
+    /// assert_eq!(
+    ///     claims.firebase.sign_in_provider,
+    ///     claims_json["firebase"]["sign_in_provider"]
+    ///         .as_str()
+    ///         .unwrap()
+    /// );
+    /// # Ok(())
+    /// # }
+    /// ```
+    ///
     /// [Firebase API docs]: https://firebase.google.com/docs/auth/admin/verify-id-tokens#verify_id_tokens_using_a_third-party_jwt_library
     #[tracing::instrument(name = "Decode ID token", skip(self, token))]
-    pub async fn decode_id_token(
+    pub async fn decode_id_token<C: DeserializeOwned>(
         &mut self,
-        token: impl AsRef<str>,
-    ) -> Result<IdTokenClaims, FirebaseError> {
+        token: &str,
+    ) -> Result<C, FirebaseError> {
         let id_token_claims = self
             .token_handler
             .decode_id_token(token.as_ref())
