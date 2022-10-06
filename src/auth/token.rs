@@ -56,8 +56,7 @@ impl TokenHandler {
             &DecodingKey::from_rsa_pem(public_key.as_ref())
                 .context("Invalid public key format in ID token")?,
             &validation,
-        )
-        .context("Failed to decode ID token")?;
+        )?;
 
         Ok(decoded.claims)
     }
