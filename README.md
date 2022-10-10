@@ -10,6 +10,10 @@ This is a home-made client for Firebase's Admin SDK that seeks to provide a user
 cargo doc --open
 ```
 
+## Dependencies
+
+To verify ID tokens for Firebase Auth, OpenSSL is required. For installation, see the [`openssl` crate's documentation](https://docs.rs/openssl/latest/openssl/index.html).
+
 ## Examples
 
 Check out the `examples` directory. Test-run the hello-world example with:
