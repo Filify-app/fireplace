@@ -116,7 +116,7 @@ impl FirebaseAuthClient {
             let err = res
                 .json::<AuthApiErrorResponse>()
                 .await
-                .context("Failed to read response JSON")?
+                .context("Failed to read error response JSON")?
                 .into();
 
             tracing::error!("Failed with '{}'", &err);
