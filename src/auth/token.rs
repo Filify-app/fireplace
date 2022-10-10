@@ -6,6 +6,7 @@ use std::{
 use anyhow::Context;
 use jsonwebtoken::{DecodingKey, Validation};
 use serde::de::DeserializeOwned;
+use tokio::sync::RwLock;
 
 pub(super) struct TokenHandler {
     public_keys: PublicKeys,
@@ -25,7 +26,7 @@ impl TokenHandler {
     /// Fails if the token is in a bad format, expired, not issued for this
     /// project, or if the signature is invalid.
     pub(super) async fn decode_id_token<C: DeserializeOwned>(
-        &mut self,
+        &self,
         token: &str,
     ) -> Result<C, anyhow::Error> {
         let header = jsonwebtoken::decode_header(token)?;
@@ -63,47 +64,50 @@ impl TokenHandler {
 }
 
 struct PublicKeys {
-    public_key_map: Option<PublicKeyMap>,
+    public_key_map: RwLock<Option<PublicKeyMap>>,
     http_client: reqwest::Client,
 }
 
 impl PublicKeys {
     fn new(http_client: reqwest::Client) -> Self {
         Self {
-            public_key_map: None,
+            public_key_map: RwLock::new(None),
             http_client,
         }
     }
 
-    async fn get(&mut self, key_id: &str) -> Result<Option<&str>, anyhow::Error> {
-        if self.should_update() {
+    async fn get(&self, key_id: &str) -> Result<Option<String>, anyhow::Error> {
+        if self.should_update().await {
             self.update().await?;
         }
 
-        let key = self
-            .public_key_map
+        let public_key_map = self.public_key_map.read().await;
+
+        let key = public_key_map
             .as_ref()
             .context("Public key map was not present")?
             .keys
             .get(key_id)
-            .map(String::as_str);
+            .map(|s| s.to_owned());
 
         Ok(key)
     }
 
-    async fn update(&mut self) -> Result<(), anyhow::Error> {
-        let public_key_map = PublicKeyMap::fetch(&self.http_client).await.map_err(|e| {
+    async fn update(&self) -> Result<(), anyhow::Error> {
+        let mut public_key_map = self.public_key_map.write().await;
+
+        let pkm = PublicKeyMap::fetch(&self.http_client).await.map_err(|e| {
             tracing::error!("Failed to fetch public keys: {}", e);
             e
         })?;
 
-        self.public_key_map = Some(public_key_map);
+        *public_key_map = Some(pkm);
 
         Ok(())
     }
 
-    fn should_update(&self) -> bool {
-        match &self.public_key_map {
+    async fn should_update(&self) -> bool {
+        match self.public_key_map.read().await.as_ref() {
             None => true,
             Some(pkm) if Instant::now() >= pkm.update_by => true,
             _ => false,
