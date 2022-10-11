@@ -1,4 +1,4 @@
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Deserialize)]
 pub(crate) struct GetAccountInfoResponse {
@@ -29,4 +29,12 @@ pub struct User {
     pub last_refresh_at: Option<String>,
     #[serde(flatten)]
     pub other: serde_json::Value,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct NewUser {
+    pub display_name: Option<String>,
+    pub email: String,
+    pub password: String,
 }

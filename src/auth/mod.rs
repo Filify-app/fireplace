@@ -1,12 +1,12 @@
 use anyhow::Context;
 use reqwest::Response;
-use serde::de::DeserializeOwned;
+use serde::{de::DeserializeOwned, Deserialize};
 
-use crate::error::FirebaseError;
+use crate::{auth::error::AuthApiErrorResponse, error::FirebaseError};
 
 use self::{
     credential::ServiceAccountCredentialManager,
-    models::{GetAccountInfoResponse, User},
+    models::{GetAccountInfoResponse, NewUser, User},
 };
 
 pub mod credential;
@@ -35,13 +35,13 @@ impl FirebaseAuthClient {
         Ok(Self {
             token_handler: token::TokenHandler::new(project_id, client.clone()),
             client,
-            api_url: "https://identitytoolkit.googleapis.com/v1/accounts".to_string(),
+            api_url: "https://identitytoolkit.googleapis.com/v1".to_string(),
             credential_manager,
         })
     }
 
     fn url(&self, path: impl AsRef<str>) -> String {
-        format!("{}:{}", self.api_url, path.as_ref())
+        format!("{}{}", self.api_url, path.as_ref())
     }
 
     /// Creates a new `POST` request builder with the `Authorization` header set
@@ -188,17 +188,21 @@ impl FirebaseAuthClient {
 
     #[tracing::instrument(name = "Get user", skip(self, user_id))]
     pub async fn get_user(&self, user_id: impl AsRef<str>) -> Result<Option<User>, FirebaseError> {
+        let user_id = user_id.as_ref();
+
         let body = serde_json::json!({
-            "localId": [user_id.as_ref()],
+            "localId": [user_id],
         });
 
+        tracing::debug!("Retrieving user with ID '{}'", user_id);
+
         let res = self
-            .auth_post(self.url("lookup"))
+            .auth_post(self.url("/accounts:lookup"))
             .await?
             .body(body.to_string())
             .send()
             .await
-            .context("Failed to fetch user info")?;
+            .context("Failed to send get user request")?;
 
         if !res.status().is_success() {
             return Err(response_error("Failed to get user", res).await);
@@ -209,6 +213,43 @@ impl FirebaseAuthClient {
         let user = res_body.users.and_then(|mut users| users.pop());
 
         Ok(user)
+    }
+
+    #[tracing::instrument(name = "Create user", skip(self, new_user))]
+    pub async fn create_user(&self, new_user: NewUser) -> Result<String, FirebaseError> {
+        let body = serde_json::to_string(&new_user).context("Failed to serialize new user")?;
+
+        let res = self
+            .auth_post(self.url("/accounts:signUp"))
+            .await?
+            .body(body)
+            .send()
+            .await
+            .context("Failed to send create user request")?;
+
+        if !res.status().is_success() {
+            let err = res
+                .json::<AuthApiErrorResponse>()
+                .await
+                .context("Failed to read error response JSON")?
+                .into();
+
+            tracing::error!("Failed to create user: {}", &err);
+
+            return Err(err);
+        }
+
+        #[derive(Deserialize)]
+        struct SignUpResponse {
+            #[serde(rename = "localId")]
+            uid: String,
+        }
+
+        let res_body: SignUpResponse = res.json().await.context("Failed to read response JSON")?;
+
+        tracing::info!("Created user with id '{}'", &res_body.uid);
+
+        Ok(res_body.uid)
     }
 }
 
