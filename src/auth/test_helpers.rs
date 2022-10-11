@@ -1,12 +1,22 @@
 use std::env;
 
-use anyhow::Context;
+use crate::token::ServiceAccount;
 
-use super::FirebaseAuthClient;
+use super::{credential::ServiceAccountCredentialManager, FirebaseAuthClient};
 
 pub fn initialise() -> Result<FirebaseAuthClient, anyhow::Error> {
-    let api_key = env::var("FIREBASE_API_KEY").context("Missing FIREBASE_API_KEY")?;
-    let project_id = env::var("FIREBASE_PROJECT_ID").context("Missing FIREBASE_PROJECT_ID")?;
-    let auth_client = FirebaseAuthClient::new(project_id, &api_key)?;
+    let service_account = ServiceAccount {
+        project_id: env::var("FIREBASE_PROJECT_ID")?,
+        client_id: env::var("FIREBASE_CLIENT_ID")?,
+        client_email: env::var("FIREBASE_CLIENT_EMAIL")?,
+        private_key_id: env::var("FIREBASE_PRIVATE_KEY_ID")?,
+        private_key: env::var("FIREBASE_PRIVATE_KEY")?.replace(r"\n", "\n"),
+    };
+
+    let project_id = service_account.project_id.clone();
+    let credential_manager = ServiceAccountCredentialManager::new(service_account);
+
+    let auth_client = FirebaseAuthClient::new(project_id, credential_manager)?;
+
     Ok(auth_client)
 }
