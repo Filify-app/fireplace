@@ -1,6 +1,7 @@
 use anyhow::Context;
 use jsonwebtoken::{get_current_timestamp, Algorithm, EncodingKey};
 use serde::{Deserialize, Serialize};
+use tokio::sync::RwLock;
 
 use crate::token::ServiceAccount;
 
@@ -10,6 +11,7 @@ const GOOGLE_AUTH_TOKEN_PATH: &str = "/o/oauth2/token";
 
 pub struct ServiceAccountCredentialManager {
     service_account: ServiceAccount,
+    current_access_token: RwLock<Option<AccessToken>>,
     http_client: reqwest::Client,
 }
 
@@ -17,11 +19,33 @@ impl ServiceAccountCredentialManager {
     pub fn new(service_account: ServiceAccount) -> Self {
         Self {
             service_account,
+            current_access_token: RwLock::new(None),
             http_client: reqwest::Client::new(),
         }
     }
 
-    pub async fn get_access_token(&self) -> Result<String, anyhow::Error> {
+    pub async fn get_access_token(&self) -> anyhow::Result<String> {
+        match self.get_non_expired_token().await {
+            Some(token) => Ok(token),
+            None => {
+                let mut token_guard = self.current_access_token.write().await;
+                let access_token = self.fetch_access_token().await?;
+                let token = access_token.access_token.clone();
+                *token_guard = Some(access_token);
+                Ok(token)
+            }
+        }
+    }
+
+    async fn get_non_expired_token(&self) -> Option<String> {
+        match self.current_access_token.read().await.as_ref() {
+            Some(token) if !token.has_expired() => Some(token.access_token.clone()),
+            _ => None,
+        }
+    }
+
+    #[tracing::instrument(name = "Fetch Auth access token", skip(self))]
+    async fn fetch_access_token(&self) -> Result<AccessToken, anyhow::Error> {
         let jwt = self.create_auth_jwt()?;
 
         let post_data = format!(
@@ -60,7 +84,12 @@ impl ServiceAccountCredentialManager {
             "Google did not return a Bearer token"
         );
 
-        Ok(res_body.access_token)
+        let access_token = AccessToken {
+            access_token: res_body.access_token,
+            expires_at: get_current_timestamp() + res_body.expires_in,
+        };
+
+        Ok(access_token)
     }
 
     fn create_auth_jwt(&self) -> Result<String, anyhow::Error> {
@@ -110,4 +139,16 @@ struct AccessTokenResponse {
     access_token: String,
     expires_in: u64,
     token_type: String,
+}
+
+#[derive(Debug, Clone)]
+struct AccessToken {
+    access_token: String,
+    expires_at: u64,
+}
+
+impl AccessToken {
+    fn has_expired(&self) -> bool {
+        get_current_timestamp() >= self.expires_at
+    }
 }
