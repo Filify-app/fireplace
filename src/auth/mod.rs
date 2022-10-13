@@ -1,6 +1,6 @@
 use anyhow::Context;
 use reqwest::Response;
-use serde::{de::DeserializeOwned, Deserialize};
+use serde::{de::DeserializeOwned, Deserialize, Serialize};
 
 use crate::{auth::error::AuthApiErrorResponse, error::FirebaseError, ServiceAccount};
 
@@ -324,6 +324,37 @@ impl FirebaseAuthClient {
         let res_body: SignInResponse = res.json().await.context("Failed to read response JSON")?;
 
         Ok(res_body.id_token)
+    }
+
+    #[tracing::instrument(name = "Set custom user claims", skip(self, user_id, new_claims))]
+    pub async fn set_custom_user_claims<C: Serialize>(
+        &self,
+        user_id: &str,
+        new_claims: C,
+    ) -> Result<(), FirebaseError> {
+        let custom_claims =
+            serde_json::to_string(&new_claims).context("Failed to serialize claims")?;
+
+        let body = serde_json::json!({
+            "localId": user_id,
+            "customAttributes": custom_claims,
+        });
+
+        let res = self
+            .auth_post(self.url("/accounts:update"))
+            .await?
+            .body(body.to_string())
+            .send()
+            .await
+            .context("Failed to send custom claims request")?;
+
+        if !res.status().is_success() {
+            return Err(response_error("Failed to set custom user claims", res).await);
+        }
+
+        tracing::debug!("Set custom claims for user '{}'", user_id);
+
+        Ok(())
     }
 }
 

@@ -1,4 +1,6 @@
-use serde::{Deserialize, Serialize};
+use std::str::FromStr;
+
+use serde::{Deserialize, Deserializer, Serialize};
 
 #[derive(Debug, Deserialize)]
 pub(crate) struct GetAccountInfoResponse {
@@ -19,7 +21,12 @@ pub struct User {
     pub photo_url: Option<String>,
     pub disabled: Option<bool>,
     pub salt: Option<String>,
-    pub custom_attributes: Option<String>,
+    #[serde(
+        default,
+        rename = "customAttributes",
+        deserialize_with = "deserialize_custom_attributes"
+    )]
+    pub custom_claims: serde_json::Value,
     pub valid_since: Option<String>,
     pub tenant_id: Option<String>,
     // pub provider_user_info: Option<Vec<ProviderUserInfo>>,
@@ -29,6 +36,20 @@ pub struct User {
     pub last_refresh_at: Option<String>,
     #[serde(flatten)]
     pub other: serde_json::Value,
+}
+
+fn deserialize_custom_attributes<'de, T, D>(deserializer: D) -> Result<T, D::Error>
+where
+    T: FromStr + Default,
+    T::Err: std::fmt::Display,
+    D: Deserializer<'de>,
+{
+    let s: Option<String> = Option::deserialize(deserializer)?;
+    let t = s
+        .map(|s| T::from_str(&s).map_err(serde::de::Error::custom))
+        .transpose()?
+        .unwrap_or_default();
+    Ok(t)
 }
 
 #[derive(Debug, Serialize)]
