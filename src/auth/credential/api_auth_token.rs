@@ -9,13 +9,13 @@ const GOOGLE_TOKEN_AUDIENCE: &str = "https://accounts.google.com/o/oauth2/token"
 const GOOGLE_AUTH_TOKEN_HOST: &str = "accounts.google.com";
 const GOOGLE_AUTH_TOKEN_PATH: &str = "/o/oauth2/token";
 
-pub struct ServiceAccountCredentialManager {
+pub struct ApiAuthTokenManager {
     service_account: ServiceAccount,
     current_access_token: RwLock<Option<AccessToken>>,
     http_client: reqwest::Client,
 }
 
-impl ServiceAccountCredentialManager {
+impl ApiAuthTokenManager {
     pub fn new(service_account: ServiceAccount) -> Self {
         Self {
             service_account,

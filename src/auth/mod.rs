@@ -2,10 +2,10 @@ use anyhow::Context;
 use reqwest::Response;
 use serde::{de::DeserializeOwned, Deserialize};
 
-use crate::{auth::error::AuthApiErrorResponse, error::FirebaseError};
+use crate::{auth::error::AuthApiErrorResponse, error::FirebaseError, token::ServiceAccount};
 
 use self::{
-    credential::ServiceAccountCredentialManager,
+    credential::{ApiAuthTokenManager, UserTokenManager},
     models::{GetAccountInfoResponse, NewUser, User},
 };
 
@@ -13,30 +13,29 @@ pub mod credential;
 mod error;
 pub mod models;
 pub mod test_helpers;
-mod token;
 
 pub struct FirebaseAuthClient {
     client: reqwest::Client,
     api_url: String,
-    token_handler: token::TokenHandler,
-    credential_manager: ServiceAccountCredentialManager,
+    user_token_manager: UserTokenManager,
+    api_auth_token_manager: ApiAuthTokenManager,
 }
 
 impl FirebaseAuthClient {
-    pub fn new(
-        project_id: String,
-        credential_manager: ServiceAccountCredentialManager,
-    ) -> Result<Self, FirebaseError> {
+    pub fn new(service_account: ServiceAccount) -> Result<Self, FirebaseError> {
         let client = reqwest::Client::builder()
             .https_only(true)
             .build()
             .context("Failed to create HTTP client")?;
 
+        let credential_manager = ApiAuthTokenManager::new(service_account.clone());
+        let token_handler = UserTokenManager::new(service_account, client.clone());
+
         Ok(Self {
-            token_handler: token::TokenHandler::new(project_id, client.clone()),
+            user_token_manager: token_handler,
             client,
             api_url: "https://identitytoolkit.googleapis.com/v1".to_string(),
-            credential_manager,
+            api_auth_token_manager: credential_manager,
         })
     }
 
@@ -51,7 +50,7 @@ impl FirebaseAuthClient {
         url: impl AsRef<str>,
     ) -> Result<reqwest::RequestBuilder, FirebaseError> {
         let access_token = self
-            .credential_manager
+            .api_auth_token_manager
             .get_access_token()
             .await
             .map_err(|e| {
@@ -178,7 +177,7 @@ impl FirebaseAuthClient {
         token: &str,
     ) -> Result<C, FirebaseError> {
         let id_token_claims = self
-            .token_handler
+            .user_token_manager
             .decode_id_token(token)
             .await
             .map_err(FirebaseError::ValidateTokenError)?;

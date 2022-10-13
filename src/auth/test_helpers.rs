@@ -2,7 +2,7 @@ use std::env;
 
 use crate::token::ServiceAccount;
 
-use super::{credential::ServiceAccountCredentialManager, FirebaseAuthClient};
+use super::FirebaseAuthClient;
 
 pub fn initialise() -> Result<FirebaseAuthClient, anyhow::Error> {
     let service_account = ServiceAccount {
@@ -13,10 +13,7 @@ pub fn initialise() -> Result<FirebaseAuthClient, anyhow::Error> {
         private_key: env::var("FIREBASE_PRIVATE_KEY")?.replace(r"\n", "\n"),
     };
 
-    let project_id = service_account.project_id.clone();
-    let credential_manager = ServiceAccountCredentialManager::new(service_account);
-
-    let auth_client = FirebaseAuthClient::new(project_id, credential_manager)?;
+    let auth_client = FirebaseAuthClient::new(service_account)?;
 
     Ok(auth_client)
 }
