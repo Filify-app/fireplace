@@ -185,6 +185,22 @@ impl FirebaseAuthClient {
         Ok(id_token_claims)
     }
 
+    /// Create a custom token for a user, which can then be used to sign into
+    /// Firebase.
+    #[tracing::instrument(name = "Create custom token", skip(self, user_id))]
+    pub async fn create_custom_token(
+        &self,
+        user_id: impl AsRef<str>,
+    ) -> Result<String, FirebaseError> {
+        let user_id = user_id.as_ref();
+
+        tracing::debug!("Creating custom token for user '{}'", user_id);
+
+        let id_token_claims = self.user_token_manager.create_custom_token(user_id).await?;
+
+        Ok(id_token_claims)
+    }
+
     #[tracing::instrument(name = "Get user", skip(self, user_id))]
     pub async fn get_user(&self, user_id: impl AsRef<str>) -> Result<Option<User>, FirebaseError> {
         let user_id = user_id.as_ref();

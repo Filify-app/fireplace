@@ -1,10 +1,13 @@
 use anyhow::Context;
-use jsonwebtoken::{DecodingKey, Validation};
-use serde::de::DeserializeOwned;
+use jsonwebtoken::{get_current_timestamp, Algorithm, DecodingKey, Validation};
+use serde::{de::DeserializeOwned, Serialize};
 
 use super::public_keys::PublicKeys;
 
 use crate::token::ServiceAccount;
+
+const FIREBASE_AUDIENCE: &str =
+    "https://identitytoolkit.googleapis.com/google.identity.identitytoolkit.v1.IdentityToolkit";
 
 pub struct UserTokenManager {
     public_keys: PublicKeys,
@@ -58,5 +61,44 @@ impl UserTokenManager {
         )?;
 
         Ok(decoded.claims)
+    }
+
+    /// Creates and signs a custom token for a user ID, which the user can use
+    /// to authenticate against Firebase services.
+    ///
+    /// See the official [Firebase Auth docs for creating custom tokens](https://firebase.google.com/docs/auth/admin/create-custom-tokens#create_custom_tokens_using_a_third-party_jwt_library>).
+    pub async fn create_custom_token(&self, uid: &str) -> Result<String, anyhow::Error> {
+        #[derive(Serialize)]
+        struct CustomTokenClaims<'a> {
+            aud: &'a str,
+            iat: u64,
+            exp: u64,
+            iss: &'a str,
+            sub: &'a str,
+            uid: &'a str,
+        }
+
+        let header = jsonwebtoken::Header::new(Algorithm::RS256);
+
+        let issued_at_time = get_current_timestamp();
+        let expires_at = issued_at_time + (60 * 60);
+
+        let claims = CustomTokenClaims {
+            iss: &self.service_account.client_email,
+            sub: &self.service_account.client_email,
+            aud: FIREBASE_AUDIENCE,
+            iat: issued_at_time,
+            exp: expires_at,
+            uid,
+        };
+
+        let encoding_key =
+            jsonwebtoken::EncodingKey::from_rsa_pem(self.service_account.private_key.as_bytes())
+                .context("Failed to create JWT encoding key from the given private key")?;
+
+        let jwt = jsonwebtoken::encode(&header, &claims, &encoding_key)
+            .context("Failed to create custom token JWT")?;
+
+        Ok(jwt)
     }
 }
