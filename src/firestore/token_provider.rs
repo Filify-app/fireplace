@@ -1,38 +1,11 @@
-use std::{fs::File, path::Path};
-
 use anyhow::Context;
-use serde::{Deserialize, Serialize};
+use jsonwebtoken::{get_current_timestamp, Algorithm};
+use serde::Serialize;
 
-use crate::{error::FirebaseError, utils::get_unix_time};
-
-/// Service account information contained within the service account JSON file
-/// that you can download from Firebase.
-///
-/// `Serialize`, `Display`, and `Debug` are intentionally not implemented to
-/// avoid accidentally leaking credentials.
-#[derive(Deserialize, Clone)]
-pub struct ServiceAccount {
-    pub project_id: String,
-    pub private_key: String,
-    pub private_key_id: String,
-    pub client_email: String,
-    pub client_id: String,
-}
-
-impl ServiceAccount {
-    /// Creates a new `ServiceAccount` instance from a service account JSON
-    /// file. You can download such a file from Firebase.
-    pub fn from_file(path: impl AsRef<Path>) -> Result<Self, FirebaseError> {
-        let file_reader = File::open(path).context("Failed to read service account JSON file")?;
-        let service_account = serde_json::from_reader(file_reader)
-            .context("Could not extract service account details from file")?;
-
-        Ok(service_account)
-    }
-}
+use crate::{error::FirebaseError, ServiceAccount};
 
 #[derive(Clone)]
-pub struct FirebaseTokenProvider {
+pub struct FirestoreTokenProvider {
     service_account: ServiceAccount,
     current_token: Option<Token>,
 }
@@ -45,7 +18,7 @@ struct Token {
     expires_at: u64,
 }
 
-impl FirebaseTokenProvider {
+impl FirestoreTokenProvider {
     pub fn new(service_account: ServiceAccount) -> Self {
         Self {
             service_account,
@@ -55,7 +28,7 @@ impl FirebaseTokenProvider {
 
     pub fn get_token(&mut self) -> Result<String, FirebaseError> {
         match &self.current_token {
-            Some(token) if token.expires_at > get_unix_time()? => Ok(token.jwt.clone()),
+            Some(token) if token.expires_at > get_current_timestamp() => Ok(token.jwt.clone()),
             _ => {
                 let token = create_jwt(&self.service_account)?;
                 let jwt = token.jwt.clone();
@@ -67,13 +40,13 @@ impl FirebaseTokenProvider {
 }
 
 fn create_jwt(service_account: &ServiceAccount) -> Result<Token, anyhow::Error> {
-    let mut header = jsonwebtoken::Header::new(jsonwebtoken::Algorithm::RS256);
+    let mut header = jsonwebtoken::Header::new(Algorithm::RS256);
     header.kid = Some(service_account.private_key_id.clone());
 
     let valid_duration = 60 * 60; // the token will be valid for 60 minutes
     let expiry_buffer = 5 * 60; // but we will create a new token after 55 minutes just to be sure
 
-    let issued_at_time = jsonwebtoken::get_current_timestamp();
+    let issued_at_time = get_current_timestamp();
     let claims = JwtClaims {
         iss: &service_account.client_email,
         sub: &service_account.client_email,
@@ -122,7 +95,7 @@ mod tests {
             client_id: "some client id here".to_string(),
         };
 
-        let mut token_provider = FirebaseTokenProvider::new(service_account);
+        let mut token_provider = FirestoreTokenProvider::new(service_account);
 
         let initial_token = token_provider.get_token().unwrap();
 

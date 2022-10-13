@@ -2,7 +2,7 @@ use anyhow::Context;
 use reqwest::Response;
 use serde::{de::DeserializeOwned, Deserialize};
 
-use crate::{auth::error::AuthApiErrorResponse, error::FirebaseError, token::ServiceAccount};
+use crate::{auth::error::AuthApiErrorResponse, error::FirebaseError, ServiceAccount};
 
 use self::{
     credential::{ApiAuthTokenManager, UserTokenManager},

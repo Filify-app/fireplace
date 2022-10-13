@@ -2,6 +2,7 @@ pub mod client;
 pub mod query;
 pub mod reference;
 pub mod serde;
+mod token_provider;
 
 /// This module isn't really supposed to be exposed, but we are lacking
 /// `#[cfg(doctest)]`, and we can't make it private either since doctests are

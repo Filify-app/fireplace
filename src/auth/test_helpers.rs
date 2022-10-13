@@ -1,6 +1,6 @@
 use std::env;
 
-use crate::token::ServiceAccount;
+use crate::ServiceAccount;
 
 use super::FirebaseAuthClient;
 

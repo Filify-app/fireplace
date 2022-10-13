@@ -4,7 +4,7 @@ use serde::{de::DeserializeOwned, Serialize};
 
 use super::public_keys::PublicKeys;
 
-use crate::token::ServiceAccount;
+use crate::ServiceAccount;
 
 const FIREBASE_AUDIENCE: &str =
     "https://identitytoolkit.googleapis.com/google.identity.identitytoolkit.v1.IdentityToolkit";

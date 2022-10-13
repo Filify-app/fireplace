@@ -3,7 +3,7 @@ use jsonwebtoken::{get_current_timestamp, Algorithm, EncodingKey};
 use serde::{Deserialize, Serialize};
 use tokio::sync::RwLock;
 
-use crate::token::ServiceAccount;
+use crate::ServiceAccount;
 
 const GOOGLE_TOKEN_AUDIENCE: &str = "https://accounts.google.com/o/oauth2/token";
 const GOOGLE_AUTH_TOKEN_HOST: &str = "accounts.google.com";

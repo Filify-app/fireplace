@@ -3,7 +3,7 @@ use fireplace::{
         client::{FirestoreClient, FirestoreClientOptions},
         collection,
     },
-    token::{FirebaseTokenProvider, ServiceAccount},
+    ServiceAccount,
 };
 
 #[tokio::main]
@@ -11,10 +11,6 @@ async fn main() {
     // Load the service account, which specifies which project we will connect
     // to and the secret keys used for authentication.
     let service_account = ServiceAccount::from_file("./test-service-account.json").unwrap();
-    let project_id = service_account.project_id.clone();
-
-    // Create the token provider that will generate JWTs for us automatically.
-    let token_provider = FirebaseTokenProvider::new(service_account);
 
     // This assumes that a local Firebase emulator is running on port with a
     // config similar to this:
@@ -35,7 +31,7 @@ async fn main() {
     let client_options = FirestoreClientOptions::default().host_url("https://127.0.0.1:8081");
 
     // Finally, create a client for Firestore.
-    let mut client = FirestoreClient::initialise(&project_id, token_provider, client_options)
+    let mut client = FirestoreClient::initialise(service_account, client_options)
         .await
         .unwrap();
 
