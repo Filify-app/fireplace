@@ -266,6 +266,44 @@ impl FirebaseAuthClient {
 
         Ok(res_body.uid)
     }
+
+    /// Signs into Firebase with a custom generated token, which you can get
+    /// from [`create_custom_token`](Self::create_custom_token). Returns an ID
+    /// token for Firebase.
+    #[tracing::instrument(name = "Sign in with custom token", skip(self, custom_token))]
+    pub async fn sign_in_with_custom_token(
+        &self,
+        custom_token: impl AsRef<str>,
+    ) -> Result<String, FirebaseError> {
+        tracing::debug!("Signing in with custom token");
+
+        let body = serde_json::json!({
+            "token": custom_token.as_ref(),
+            "returnSecureToken": true,
+        });
+
+        let res = self
+            .auth_post(self.url("/accounts:signInWithCustomToken"))
+            .await?
+            .body(body.to_string())
+            .send()
+            .await
+            .context("Failed to send sign-in request")?;
+
+        if !res.status().is_success() {
+            return Err(response_error("Failed to get user", res).await);
+        }
+
+        #[derive(Deserialize)]
+        #[serde(rename_all = "camelCase")]
+        struct SignInResponse {
+            id_token: String,
+        }
+
+        let res_body: SignInResponse = res.json().await.context("Failed to read response JSON")?;
+
+        Ok(res_body.id_token)
+    }
 }
 
 async fn response_error(msg: &'static str, res: Response) -> FirebaseError {
