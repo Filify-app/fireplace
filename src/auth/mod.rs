@@ -9,7 +9,7 @@ use self::{
     models::{GetAccountInfoResponse, NewUser, User},
 };
 
-pub mod credential;
+mod credential;
 mod error;
 pub mod models;
 pub mod test_helpers;
@@ -89,18 +89,30 @@ impl FirebaseAuthClient {
     /// # async fn main() -> Result<(), fireplace::error::FirebaseError> {
     /// # use ulid::Ulid;
     /// # let auth_client = fireplace::auth::test_helpers::initialise()?;
+    /// use fireplace::auth::models::NewUser;
+    ///
     /// // Create some user so we can get a valid ID token
-    /// let signed_up_user = auth_client
-    ///     .sign_up_with_email_and_password(format!("{}@example.com", Ulid::new()), Ulid::new())
+    /// let user_id = auth_client
+    ///     .create_user(NewUser {
+    ///         display_name: Some("Mario".to_string()),
+    ///         email: format!("{}@example.com", Ulid::new()),
+    ///         password: Ulid::new().to_string(),
+    ///     })
     ///     .await?;
+    ///
+    /// // Generate custom token, which the "user" can use to sign into Firebase
+    /// let custom_token = auth_client.create_custom_token(&user_id).await?;
+    ///
+    /// // Sign into Firebase to obtain an ID token
+    /// let id_token = auth_client.sign_in_with_custom_token(&custom_token).await?;
     ///
     /// // Decode the ID token. If we get Ok back, we know it's valid and the
     /// // user is authenticated.
     /// let decoded_token = auth_client
-    ///     .decode_id_token::<serde_json::Value>(&signed_up_user.id_token)
+    ///     .decode_id_token::<serde_json::Value>(&id_token)
     ///     .await?;
     ///
-    /// assert_eq!(signed_up_user.user_uid, decoded_token["user_id"].as_str().unwrap());
+    /// assert_eq!(user_id, decoded_token["user_id"].as_str().unwrap());
     /// # Ok(())
     /// # }
     /// ```
@@ -131,13 +143,18 @@ impl FirebaseAuthClient {
     /// # async fn main() -> Result<(), fireplace::error::FirebaseError> {
     /// # use ulid::Ulid;
     /// # let auth_client = fireplace::auth::test_helpers::initialise()?;
-    /// use serde::Deserialize;
-    ///
-    /// let id_token = auth_client
-    ///     .sign_up_with_email_and_password(format!("{}@example.com", Ulid::new()), Ulid::new())
-    ///     .await?
-    ///     .id_token;
-    ///
+    /// # use fireplace::auth::models::NewUser;
+    /// # use serde::Deserialize;
+    /// # let user_id = auth_client
+    /// #     .create_user(NewUser {
+    /// #         display_name: Some("Mario".to_string()),
+    /// #         email: format!("{}@example.com", Ulid::new()),
+    /// #         password: Ulid::new().to_string(),
+    /// #     })
+    /// #     .await?;
+    /// # let custom_token = auth_client.create_custom_token(&user_id).await?;
+    /// # let id_token = auth_client.sign_in_with_custom_token(&custom_token).await?;
+    /// #
     /// #[derive(Debug, Deserialize)]
     /// struct Claims {
     ///     user_id: String,
@@ -187,6 +204,10 @@ impl FirebaseAuthClient {
 
     /// Create a custom token for a user, which can then be used to sign into
     /// Firebase.
+    ///
+    /// # Examples
+    ///
+    /// See the first example for [`decode_id_token`](Self::decode_id_token).
     #[tracing::instrument(name = "Create custom token", skip(self, user_id))]
     pub async fn create_custom_token(
         &self,
