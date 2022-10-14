@@ -414,6 +414,11 @@ impl FirebaseAuthClient {
     /// Set custom attributes on a user. The attributes can be anything JSON-
     /// serializable. This will overwrite any existing attributes competely.
     ///
+    /// The fields that you set as custom claims will show up in the ID token
+    /// claims. This can, for example, be useful for access-control. Note that
+    /// users need to re-authenticate for the custom claims to appear in the ID
+    /// token.
+    ///
     /// # Examples
     ///
     /// ```
