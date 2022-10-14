@@ -291,6 +291,10 @@ impl FirebaseAuthClient {
     /// Signs into Firebase with a custom generated token, which you can get
     /// from [`create_custom_token`](Self::create_custom_token). Returns an ID
     /// token for Firebase.
+    ///
+    /// # Examples
+    ///
+    /// See the first example for [`decode_id_token`](Self::decode_id_token).
     #[tracing::instrument(name = "Sign in with custom token", skip(self, custom_token))]
     pub async fn sign_in_with_custom_token(
         &self,
