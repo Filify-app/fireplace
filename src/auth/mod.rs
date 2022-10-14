@@ -222,6 +222,54 @@ impl FirebaseAuthClient {
         Ok(id_token_claims)
     }
 
+    /// Retrieve info about a user by their user ID. Returns `None` if the user
+    /// does not exist.
+    ///
+    /// You will also get back any custom claims that have been set on the user.
+    /// See the examples in [`set_custom_user_claims`](Self::set_custom_user_claims).
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # #[tokio::main]
+    /// # async fn main() -> Result<(), fireplace::error::FirebaseError> {
+    /// # let auth_client = fireplace::auth::test_helpers::initialise()?;
+    /// use fireplace::auth::models::NewUser;
+    /// use ulid::Ulid;
+    ///
+    /// // Create a user we can fetch afterwards
+    /// let email = format!("{}@example.com", Ulid::new());
+    /// let user = auth_client
+    ///     .create_user(NewUser {
+    ///         display_name: Some("Mario".to_string()),
+    ///         email: email.clone(),
+    ///         password: Ulid::new().to_string(),
+    ///     })
+    ///     .await?;
+    ///
+    /// let user = auth_client.get_user(&user).await?.unwrap();
+    ///
+    /// assert_eq!(user.display_name, Some("Mario".to_string()));
+    ///
+    /// // A noteworthy thing to mention is that Firebase will turn the email
+    /// // address into lowercase:
+    /// assert_eq!(user.email, Some(email.to_lowercase()));
+    ///
+    /// // ... and there are many more fields to explore
+    /// # Ok(())
+    /// # }
+    /// ```
+    ///
+    /// If you try to fetch a user that doesn't exist, you'll get `None`:
+    ///
+    /// ```
+    /// # #[tokio::main]
+    /// # async fn main() -> Result<(), fireplace::error::FirebaseError> {
+    /// # let auth_client = fireplace::auth::test_helpers::initialise()?;
+    /// assert!(auth_client.get_user("does-not-exist").await?.is_none());
+    /// # Ok(())
+    /// # }
+    /// ```
     #[tracing::instrument(name = "Get user", skip(self, user_id))]
     pub async fn get_user(&self, user_id: impl AsRef<str>) -> Result<Option<User>, FirebaseError> {
         let user_id = user_id.as_ref();
