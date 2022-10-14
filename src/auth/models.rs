@@ -52,7 +52,7 @@ where
     Ok(t)
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct NewUser {
     pub display_name: Option<String>,

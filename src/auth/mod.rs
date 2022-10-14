@@ -251,6 +251,39 @@ impl FirebaseAuthClient {
         Ok(user)
     }
 
+    /// Creates a new user in Firebase Auth using the email/password provider.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # #[tokio::main]
+    /// # async fn main() -> Result<(), fireplace::error::FirebaseError> {
+    /// # let auth_client = fireplace::auth::test_helpers::initialise()?;
+    /// use fireplace::{auth::models::NewUser, error::FirebaseError};
+    /// use ulid::Ulid;
+    ///
+    /// let new_user = NewUser {
+    ///     display_name: Some("Mario".to_string()),
+    ///     email: format!("{}@example.com", Ulid::new()),
+    ///     password: Ulid::new().to_string(),
+    /// };
+    ///
+    /// // When we create the user, we get back their unique user ID
+    /// let user_id = auth_client.create_user(new_user.clone()).await?;
+    ///
+    /// println!("Created user with ID '{}'", user_id);
+    ///
+    /// // If we attempt to create another user with the same email, Firebase
+    /// // will complain
+    /// let create_again_result = auth_client.create_user(new_user).await;
+    ///
+    /// assert!(matches!(
+    ///     create_again_result,
+    ///     Err(FirebaseError::EmailAlreadyExists)
+    /// ));
+    /// # Ok(())
+    /// # }
+    /// ```
     #[tracing::instrument(name = "Create user", skip(self, new_user))]
     pub async fn create_user(&self, new_user: NewUser) -> Result<String, FirebaseError> {
         let body = serde_json::to_string(&new_user).context("Failed to serialize new user")?;
