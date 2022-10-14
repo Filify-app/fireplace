@@ -330,6 +330,57 @@ impl FirebaseAuthClient {
         Ok(res_body.id_token)
     }
 
+    /// Set custom attributes on a user. The attributes can be anything JSON-
+    /// serializable. This will overwrite any existing attributes competely.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # #[tokio::main]
+    /// # async fn main() -> Result<(), anyhow::Error> {
+    /// # let auth_client = fireplace::auth::test_helpers::initialise()?;
+    ///
+    /// use fireplace::auth::models::NewUser;
+    /// use serde::{Deserialize, Serialize};
+    /// use ulid::Ulid;
+    ///
+    /// // Create a user we can set some claims on
+    /// let user_id = auth_client
+    ///     .create_user(NewUser {
+    ///         display_name: Some("Mario".to_string()),
+    ///         email: format!("{}@example.com", Ulid::new()),
+    ///         password: Ulid::new().to_string(),
+    ///     })
+    ///     .await?;
+    ///
+    /// // Initially, the user will have no claims
+    /// let user = auth_client.get_user(&user_id).await?.unwrap();
+    /// assert_eq!(user.custom_claims, serde_json::Value::Null);
+    ///
+    /// #[derive(Serialize, Deserialize)]
+    /// struct CustomClaims {
+    ///     #[serde(default)]
+    ///     roles: Vec<String>,
+    /// }
+    ///
+    /// // Set some custom claims
+    /// auth_client
+    ///     .set_custom_user_claims(
+    ///         &user_id,
+    ///         CustomClaims {
+    ///             roles: vec!["superhero".to_string()],
+    ///         },
+    ///     )
+    ///     .await?;
+    ///
+    /// // Now, the user should have those claims as a JSON value
+    /// let user = auth_client.get_user(&user_id).await?.unwrap();
+    /// let custom_claims: CustomClaims = serde_json::from_value(user.custom_claims)?;
+    ///
+    /// assert_eq!(custom_claims.roles, vec!["superhero"]);
+    /// # Ok(())
+    /// # }
+    /// ```
     #[tracing::instrument(name = "Set custom user claims", skip(self, user_id, new_claims))]
     pub async fn set_custom_user_claims<C: Serialize>(
         &self,
