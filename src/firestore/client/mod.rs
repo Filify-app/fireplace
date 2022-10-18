@@ -590,7 +590,7 @@ impl FirestoreClient {
     /// };
     ///
     /// client
-    ///     .set_document(&collection("pizzas").doc("hawaii"), &hawaii)
+    ///     .set_document(&collection("pizzas").doc("hawaii-one"), &hawaii)
     ///     .await?;
     ///
     /// // Query for the Hawaii pizza by name
