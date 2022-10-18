@@ -5,7 +5,7 @@ async fn create_document_in_nested_collection() -> Result<(), Box<dyn std::error
     let mut client = fireplace::firestore::test_helpers::initialise().await?;
 
     let doc_ref = collection("tales")
-        .doc("alice")
+        .doc(format!("alice-{}", ulid::Ulid::new()))
         .collection("in")
         .doc("wonderland");
 

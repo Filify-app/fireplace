@@ -274,9 +274,14 @@ impl FirestoreClient {
         // according to Google's Firestore API reference.
         let doc = serialize_to_document(document, None, None, None)?;
 
+        let parent = collection_ref
+            .parent()
+            .map(|parent_doc| self.get_name_with(&parent_doc))
+            .unwrap_or_else(|| self.root_resource_path.clone());
+
         let request = CreateDocumentRequest {
-            parent: self.root_resource_path.clone(),
-            collection_id: collection_ref.to_string(),
+            parent,
+            collection_id: collection_ref.name().to_string(),
             // Passing an empty string means that Firestore will generate a
             // document ID for us.
             document_id: document_id.unwrap_or_default(),
