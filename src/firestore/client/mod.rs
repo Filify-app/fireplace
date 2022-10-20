@@ -700,6 +700,97 @@ impl FirestoreClient {
         Ok(doc_stream.boxed())
     }
 
+    /// Fetch all documents from any collection with the given name.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # #[tokio::main]
+    /// # async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    /// # let mut client = fireplace::firestore::test_helpers::initialise().await?;
+    /// use fireplace::firestore::collection;
+    /// use futures::TryStreamExt;
+    /// use serde::Deserialize;
+    ///
+    /// // Populate the database with some documents across different collections which
+    /// // we can fetch
+    /// client
+    ///     .set_document(
+    ///         &collection("cities")
+    ///             .doc("SF")
+    ///             .collection("landmarks")
+    ///             .doc("golden-gate"),
+    ///         &serde_json::json!({ "name": "Golden Gate Bridge", "type": "bridge" }),
+    ///     )
+    ///     .await?;
+    /// client
+    ///     .set_document(
+    ///         &collection("cities")
+    ///             .doc("SF")
+    ///             .collection("landmarks")
+    ///             .doc("legion-honor"),
+    ///         &serde_json::json!({ "name": "Legion of Honor", "type": "museum" }),
+    ///     )
+    ///     .await?;
+    /// client
+    ///     .set_document(
+    ///         &collection("cities")
+    ///             .doc("TOK")
+    ///             .collection("landmarks")
+    ///             .doc("national-science-museum"),
+    ///         &serde_json::json!({ "name": "National Museum of Nature and Science", "type": "museum" }),
+    ///     )
+    ///     .await?;
+    ///
+    /// #[derive(Deserialize, Debug, PartialEq)]
+    /// struct Landmark {
+    ///     pub name: String,
+    ///     pub r#type: String,
+    /// }
+    ///
+    /// let mut landmarks: Vec<Landmark> = client
+    ///     .collection_group("landmarks")
+    ///     .await?
+    ///     .try_collect()
+    ///     .await?;
+    ///
+    /// // We don't know which order the documents will be returned in, so we sort them
+    /// landmarks.sort_by(|a, b| a.name.cmp(&b.name));
+    ///
+    /// assert_eq!(
+    ///     landmarks,
+    ///     vec![
+    ///         Landmark {
+    ///             name: "Golden Gate Bridge".to_string(),
+    ///             r#type: "bridge".to_string()
+    ///         },
+    ///         Landmark {
+    ///             name: "Legion of Honor".to_string(),
+    ///             r#type: "museum".to_string()
+    ///         },
+    ///         Landmark {
+    ///             name: "National Museum of Nature and Science".to_string(),
+    ///             r#type: "museum".to_string()
+    ///         },
+    ///     ]
+    /// );
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub async fn collection_group<'de, T: Deserialize<'de>>(
+        &mut self,
+        collection_name: impl Into<String>,
+    ) -> Result<FirebaseStream<T, FirebaseError>, FirebaseError> {
+        self.query_internal(ApiQueryOptions {
+            parent: self.root_resource_path.clone(),
+            collection_name: collection_name.into(),
+            filter: None,
+            limit: None,
+            should_search_descendants: true,
+        })
+        .await
+    }
+
     fn get_name_with(&self, item: impl Display) -> String {
         format!("{}/{}", self.root_resource_path, item)
     }
