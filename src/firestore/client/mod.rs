@@ -585,24 +585,24 @@ impl FirestoreClient {
     ///     name: String,
     /// }
     ///
-    /// let hawaii = Pizza {
-    ///     name: "Hawaii".into(),
+    /// let margherita = Pizza {
+    ///     name: "Margherita".into(),
     /// };
     ///
     /// client
-    ///     .set_document(&collection("pizzas").doc("hawaii"), &hawaii)
+    ///     .set_document(&collection("pizzas").doc("margherita"), &margherita)
     ///     .await?;
     ///
-    /// // Query for the Hawaii pizza by name
-    /// let mut hawaii_result: Option<Pizza> = client
+    /// // Query for the Margherita pizza by name
+    /// let mut margherita_result: Option<Pizza> = client
     ///     .query_one(
     ///         &collection("pizzas"),
-    ///         filter("name", EqualTo("Hawaii"))?,
+    ///         filter("name", EqualTo("Margherita"))?,
     ///     )
     ///     .await?;
     ///
-    /// // We expect a single search hit - the hawaii pizza.
-    /// assert_eq!(hawaii_result, Some(hawaii.clone()));
+    /// // We expect a single search hit - the margherita pizza.
+    /// assert_eq!(margherita_result, Some(margherita.clone()));
     ///
     /// // Query for pizzas with the name "pasta salad".
     /// let mut pasta_salad_result: Option<Pizza> = client
