@@ -187,6 +187,15 @@ impl From<FieldFilter> for GrpcFilter {
     }
 }
 
+pub(crate) struct ApiQueryOptions {
+    pub parent: String,
+    pub collection_name: String,
+    pub filter: Option<Filter>,
+    pub limit: Option<i32>,
+    /// Whether to search descendant collections with the same name
+    pub should_search_descendants: bool,
+}
+
 #[cfg(test)]
 mod tests {
     use firestore_grpc::v1::{structured_query, value::ValueType};

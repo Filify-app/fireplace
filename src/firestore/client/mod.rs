@@ -23,7 +23,7 @@ use crate::error::FirebaseError;
 use crate::firestore::serde::deserialize_firestore_document;
 use crate::token::FirebaseTokenProvider;
 
-use super::query::Filter;
+use super::query::{ApiQueryOptions, Filter};
 use super::reference::{CollectionReference, DocumentReference};
 use super::serde::serialize_to_document;
 
@@ -569,7 +569,16 @@ impl FirestoreClient {
         collection: &CollectionReference,
         filter: Filter,
     ) -> Result<FirebaseStream<T, FirebaseError>, FirebaseError> {
-        self.query_internal(collection, filter, None).await
+        let (parent, collection_name) = self.split_collection_parent_and_name(collection);
+
+        self.query_internal(ApiQueryOptions {
+            parent,
+            collection_name,
+            filter: Some(filter),
+            limit: None,
+            should_search_descendants: false,
+        })
+        .await
     }
 
     /// The same as [`query`](Self::query), but only returns the first result.
@@ -623,39 +632,41 @@ impl FirestoreClient {
         collection: &CollectionReference,
         filter: Filter,
     ) -> Result<Option<T>, FirebaseError> {
-        let mut stream = self.query_internal(collection, filter, Some(1)).await?;
+        let (parent, collection_name) = self.split_collection_parent_and_name(collection);
+
+        let mut stream = self
+            .query_internal(ApiQueryOptions {
+                parent,
+                collection_name,
+                filter: Some(filter),
+                limit: Some(1),
+                should_search_descendants: false,
+            })
+            .await?;
+
         stream.try_next().await
     }
 
     async fn query_internal<'de, T: Deserialize<'de>>(
         &mut self,
-        collection: &CollectionReference,
-        filter: Filter,
-        limit: Option<i32>,
+        options: ApiQueryOptions,
     ) -> Result<FirebaseStream<T, FirebaseError>, FirebaseError> {
-        let parent = collection
-            .parent()
-            .map(|p| self.get_name_with(p))
-            .unwrap_or_else(|| self.root_resource_path.clone());
-
         let structured_query = StructuredQuery {
             select: None,
             from: vec![CollectionSelector {
-                collection_id: collection.name().to_string(),
-                // Setting all_descendants to false means we are only querying
-                // the collection that is a direct child of the parent.
-                all_descendants: false,
+                collection_id: options.collection_name,
+                all_descendants: options.should_search_descendants,
             }],
-            r#where: Some(filter.into()),
+            r#where: options.filter.map(|f| f.into()),
             order_by: vec![],
             start_at: None,
             end_at: None,
             offset: 0,
-            limit,
+            limit: options.limit,
         };
 
         let request = RunQueryRequest {
-            parent,
+            parent: options.parent,
             query_type: Some(QueryType::StructuredQuery(structured_query)),
             consistency_selector: None,
         };
@@ -691,6 +702,19 @@ impl FirestoreClient {
 
     fn get_name_with(&self, item: impl Display) -> String {
         format!("{}/{}", self.root_resource_path, item)
+    }
+
+    fn split_collection_parent_and_name(
+        &self,
+        collection: &CollectionReference,
+    ) -> (String, String) {
+        let parent = collection
+            .parent()
+            .map(|p| self.get_name_with(p))
+            .unwrap_or_else(|| self.root_resource_path.clone());
+        let name = collection.name().to_string();
+
+        (parent, name)
     }
 }
 
