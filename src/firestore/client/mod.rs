@@ -684,11 +684,11 @@ impl FirestoreClient {
             // ignore those items.
             .filter(|res| match res {
                 Ok(inner) => future::ready(inner.document.is_some()),
-                Err(_) => future::ready(false),
+                Err(_) => future::ready(true),
             })
             .map(|res| {
                 let doc = res
-                    .context("Error response in query")?
+                    .map_err(|e| anyhow::anyhow!(e))?
                     .document
                     .context("No document in response - illegal state")?;
 
