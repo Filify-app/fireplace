@@ -8,7 +8,8 @@ use firestore_grpc::v1::firestore_client::FirestoreClient as GrpcFirestoreClient
 use firestore_grpc::v1::run_query_request::QueryType;
 use firestore_grpc::v1::structured_query::CollectionSelector;
 use firestore_grpc::v1::{
-    CreateDocumentRequest, DocumentMask, RunQueryRequest, StructuredQuery, UpdateDocumentRequest,
+    CreateDocumentRequest, DocumentMask, ListDocumentsRequest, RunQueryRequest, StructuredQuery,
+    UpdateDocumentRequest,
 };
 use firestore_grpc::{
     tonic::{
@@ -16,7 +17,8 @@ use firestore_grpc::{
     },
     v1::GetDocumentRequest,
 };
-use futures::{Stream, StreamExt, TryStreamExt};
+use futures::{stream, Stream, StreamExt, TryStreamExt};
+use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 
 use crate::error::FirebaseError;
@@ -878,6 +880,129 @@ impl FirestoreClient {
             should_search_descendants: true,
         })
         .await
+    }
+
+    /// Fetches all documents in the given collection. This skips documents that
+    /// have no fields, which Firebase calls "missing documents".
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # #[tokio::main]
+    /// # async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    /// # let mut client = fireplace::firestore::test_helpers::initialise().await?;
+    /// use fireplace::firestore::collection;
+    /// use futures::TryStreamExt;
+    /// use serde::Deserialize;
+    ///
+    /// let emojis = vec![("computer", "💻"), ("coffee", "☕")];
+    ///
+    /// for (id, symbol) in emojis {
+    ///     client
+    ///         .set_document(
+    ///             &collection("emojis").doc(id),
+    ///             &serde_json::json!({ "symbol": symbol }),
+    ///         )
+    ///         .await?;
+    /// }
+    ///
+    /// #[derive(Deserialize, Debug, PartialEq, Eq, PartialOrd, Ord)]
+    /// struct Emoji {
+    ///     symbol: String,
+    /// }
+    ///
+    /// let mut docs: Vec<Emoji> = client
+    ///     .get_documents(collection("emojis"))
+    ///     .try_collect()
+    ///     .await?;
+    ///
+    /// docs.sort();
+    ///
+    /// assert_eq!(
+    ///     docs,
+    ///     vec![
+    ///         Emoji {
+    ///             symbol: "☕".into()
+    ///         },
+    ///         Emoji {
+    ///             symbol: "💻".into()
+    ///         },
+    ///     ]
+    /// );
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub fn get_documents<T: DeserializeOwned + Send>(
+        &self,
+        collection_ref: CollectionReference,
+    ) -> FirebaseStream<T, FirebaseError> {
+        enum State {
+            Start,
+            NextPage(String),
+            End,
+        }
+
+        let initial_state = (State::Start, self.clone(), collection_ref);
+        let pagination_unfolder = stream::unfold(initial_state, |state| async move {
+            let (stage, mut client, collection_ref) = state;
+
+            let page_token = match stage {
+                State::Start => "".to_string(),
+                State::NextPage(token) => token,
+                State::End => return None,
+            };
+
+            let (parent, collection_name) =
+                client.split_collection_parent_and_name(&collection_ref);
+            let request = ListDocumentsRequest {
+                parent,
+                collection_id: collection_name,
+                page_size: 500,
+                page_token,
+                order_by: String::new(),
+                mask: None,
+                // This setting skips documents without any fields
+                show_missing: false,
+                consistency_selector: None,
+            };
+
+            let result = client
+                .client
+                .list_documents(request)
+                .await
+                .map_err(|e| anyhow!(e));
+
+            match result {
+                Ok(res) => {
+                    let message = res.into_inner();
+
+                    let next_state = if !message.next_page_token.is_empty() {
+                        State::NextPage(message.next_page_token)
+                    } else {
+                        State::End
+                    };
+
+                    Some((Ok(message.documents), (next_state, client, collection_ref)))
+                }
+                Err(e) => Some((Err(e), (State::End, client, collection_ref))),
+            }
+        });
+
+        let doc_stream = pagination_unfolder
+            .map(|res| match res {
+                Ok(res) => {
+                    let docs: Vec<Result<T, FirebaseError>> = res
+                        .into_iter()
+                        .map(|doc| deserialize_firestore_document::<T>(doc).map_err(|e| e.into()))
+                        .collect();
+
+                    stream::iter(docs)
+                }
+                Err(err) => stream::iter(vec![Err(err.into())]),
+            })
+            .flatten();
+
+        doc_stream.boxed()
     }
 
     fn get_name_with(&self, item: impl Display) -> String {
