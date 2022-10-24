@@ -58,3 +58,5 @@ For testing, the following environment variables need to be set so the tests can
 - `FIREBASE_PRIVATE_KEY_ID`
 
 They should correspond to their values from the service account JSON file.
+
+Additionally, some of the Firestore tests may need indices to be created. See the error messages for which.

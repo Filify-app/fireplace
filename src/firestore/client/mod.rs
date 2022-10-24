@@ -23,7 +23,7 @@ use crate::error::FirebaseError;
 use crate::firestore::serde::deserialize_firestore_document;
 use crate::ServiceAccount;
 
-use super::query::Filter;
+use super::query::{ApiQueryOptions, Filter};
 use super::reference::{CollectionReference, DocumentReference};
 use super::serde::serialize_to_document;
 use super::token_provider::FirestoreTokenProvider;
@@ -277,14 +277,10 @@ impl FirestoreClient {
         // according to Google's Firestore API reference.
         let doc = serialize_to_document(document, None, None, None)?;
 
-        let parent = collection_ref
-            .parent()
-            .map(|parent_doc| self.get_name_with(&parent_doc))
-            .unwrap_or_else(|| self.root_resource_path.clone());
-
+        let (parent, collection_name) = self.split_collection_parent_and_name(collection_ref);
         let request = CreateDocumentRequest {
             parent,
-            collection_id: collection_ref.name().to_string(),
+            collection_id: collection_name,
             // Passing an empty string means that Firestore will generate a
             // document ID for us.
             document_id: document_id.unwrap_or_default(),
@@ -572,7 +568,16 @@ impl FirestoreClient {
         collection: &CollectionReference,
         filter: Filter,
     ) -> Result<FirebaseStream<T, FirebaseError>, FirebaseError> {
-        self.query_internal(collection, filter, None).await
+        let (parent, collection_name) = self.split_collection_parent_and_name(collection);
+
+        self.query_internal(ApiQueryOptions {
+            parent,
+            collection_name,
+            filter: Some(filter),
+            limit: None,
+            should_search_descendants: false,
+        })
+        .await
     }
 
     /// The same as [`query`](Self::query), but only returns the first result.
@@ -626,39 +631,41 @@ impl FirestoreClient {
         collection: &CollectionReference,
         filter: Filter,
     ) -> Result<Option<T>, FirebaseError> {
-        let mut stream = self.query_internal(collection, filter, Some(1)).await?;
+        let (parent, collection_name) = self.split_collection_parent_and_name(collection);
+
+        let mut stream = self
+            .query_internal(ApiQueryOptions {
+                parent,
+                collection_name,
+                filter: Some(filter),
+                limit: Some(1),
+                should_search_descendants: false,
+            })
+            .await?;
+
         stream.try_next().await
     }
 
     async fn query_internal<'de, T: Deserialize<'de>>(
         &mut self,
-        collection: &CollectionReference,
-        filter: Filter,
-        limit: Option<i32>,
+        options: ApiQueryOptions,
     ) -> Result<FirebaseStream<T, FirebaseError>, FirebaseError> {
-        let parent = collection
-            .parent()
-            .map(|p| self.get_name_with(p))
-            .unwrap_or_else(|| self.root_resource_path.clone());
-
         let structured_query = StructuredQuery {
             select: None,
             from: vec![CollectionSelector {
-                collection_id: collection.name().to_string(),
-                // Setting all_descendants to false means we are only querying
-                // the collection that is a direct child of the parent.
-                all_descendants: false,
+                collection_id: options.collection_name,
+                all_descendants: options.should_search_descendants,
             }],
-            r#where: Some(filter.into()),
+            r#where: options.filter.map(|f| f.into()),
             order_by: vec![],
             start_at: None,
             end_at: None,
             offset: 0,
-            limit,
+            limit: options.limit,
         };
 
         let request = RunQueryRequest {
-            parent,
+            parent: options.parent,
             query_type: Some(QueryType::StructuredQuery(structured_query)),
             consistency_selector: None,
         };
@@ -676,11 +683,11 @@ impl FirestoreClient {
             // ignore those items.
             .filter(|res| match res {
                 Ok(inner) => future::ready(inner.document.is_some()),
-                Err(_) => future::ready(false),
+                Err(_) => future::ready(true),
             })
             .map(|res| {
                 let doc = res
-                    .context("Error response in query")?
+                    .map_err(|e| anyhow::anyhow!(e))?
                     .document
                     .context("No document in response - illegal state")?;
 
@@ -692,8 +699,202 @@ impl FirestoreClient {
         Ok(doc_stream.boxed())
     }
 
+    /// Fetch all documents from any collection with the given name.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # #[tokio::main]
+    /// # async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    /// # let mut client = fireplace::firestore::test_helpers::initialise().await?;
+    /// use fireplace::firestore::collection;
+    /// use futures::TryStreamExt;
+    /// use serde::Deserialize;
+    ///
+    /// // Populate the database with some documents across different collections which
+    /// // we can fetch
+    /// client
+    ///     .set_document(
+    ///         &collection("cities")
+    ///             .doc("SF")
+    ///             .collection("landmarks")
+    ///             .doc("golden-gate"),
+    ///         &serde_json::json!({ "name": "Golden Gate Bridge", "type": "bridge" }),
+    ///     )
+    ///     .await?;
+    /// client
+    ///     .set_document(
+    ///         &collection("cities")
+    ///             .doc("SF")
+    ///             .collection("landmarks")
+    ///             .doc("legion-honor"),
+    ///         &serde_json::json!({ "name": "Legion of Honor", "type": "museum" }),
+    ///     )
+    ///     .await?;
+    /// client
+    ///     .set_document(
+    ///         &collection("cities")
+    ///             .doc("TOK")
+    ///             .collection("landmarks")
+    ///             .doc("national-science-museum"),
+    ///         &serde_json::json!({ "name": "National Museum of Nature and Science", "type": "museum" }),
+    ///     )
+    ///     .await?;
+    ///
+    /// #[derive(Deserialize, Debug, PartialEq)]
+    /// struct Landmark {
+    ///     pub name: String,
+    ///     pub r#type: String,
+    /// }
+    ///
+    /// let mut landmarks: Vec<Landmark> = client
+    ///     .collection_group("landmarks")
+    ///     .await?
+    ///     .try_collect()
+    ///     .await?;
+    ///
+    /// // We don't know which order the documents will be returned in, so we sort them
+    /// landmarks.sort_by(|a, b| a.name.cmp(&b.name));
+    ///
+    /// assert_eq!(
+    ///     landmarks,
+    ///     vec![
+    ///         Landmark {
+    ///             name: "Golden Gate Bridge".to_string(),
+    ///             r#type: "bridge".to_string()
+    ///         },
+    ///         Landmark {
+    ///             name: "Legion of Honor".to_string(),
+    ///             r#type: "museum".to_string()
+    ///         },
+    ///         Landmark {
+    ///             name: "National Museum of Nature and Science".to_string(),
+    ///             r#type: "museum".to_string()
+    ///         },
+    ///     ]
+    /// );
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub async fn collection_group<'de, T: Deserialize<'de>>(
+        &mut self,
+        collection_name: impl Into<String>,
+    ) -> Result<FirebaseStream<T, FirebaseError>, FirebaseError> {
+        self.query_internal(ApiQueryOptions {
+            parent: self.root_resource_path.clone(),
+            collection_name: collection_name.into(),
+            filter: None,
+            limit: None,
+            should_search_descendants: true,
+        })
+        .await
+    }
+
+    /// Query documents from any collection with the given name. This requires
+    /// you to create a collection group index in the Firebase console,
+    /// otherwise you will get an error telling you what to do.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # #[tokio::main]
+    /// # async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    /// # let mut client = fireplace::firestore::test_helpers::initialise().await?;
+    /// use fireplace::firestore::{
+    ///     collection,
+    ///     query::{filter, EqualTo},
+    /// };
+    /// use futures::TryStreamExt;
+    /// use serde::Deserialize;
+    ///
+    /// client
+    ///     .set_document(
+    ///         &collection("cities")
+    ///             .doc("SF")
+    ///             .collection("landmarks")
+    ///             .doc("golden-gate"),
+    ///         &serde_json::json!({ "name": "Golden Gate Bridge", "type": "bridge" }),
+    ///     )
+    ///     .await?;
+    /// client
+    ///     .set_document(
+    ///         &collection("cities")
+    ///             .doc("SF")
+    ///             .collection("landmarks")
+    ///             .doc("legion-honor"),
+    ///         &serde_json::json!({ "name": "Legion of Honor", "type": "museum" }),
+    ///     )
+    ///     .await?;
+    /// client
+    ///     .set_document(
+    ///         &collection("cities")
+    ///             .doc("TOK")
+    ///             .collection("landmarks")
+    ///             .doc("national-science-museum"),
+    ///         &serde_json::json!({ "name": "National Museum of Nature and Science", "type": "museum" }),
+    ///     )
+    ///     .await?;
+    ///
+    /// #[derive(Deserialize, Debug, PartialEq)]
+    /// struct Landmark {
+    ///     pub name: String,
+    ///     pub r#type: String,
+    /// }
+    ///
+    /// let mut landmarks: Vec<Landmark> = client
+    ///     .collection_group_query("landmarks", filter("type", EqualTo("museum"))?)
+    ///     .await?
+    ///     .try_collect()
+    ///     .await?;
+    ///
+    /// landmarks.sort_by(|a, b| a.name.cmp(&b.name));
+    ///
+    /// assert_eq!(
+    ///     landmarks,
+    ///     vec![
+    ///         Landmark {
+    ///             name: "Legion of Honor".to_string(),
+    ///             r#type: "museum".to_string()
+    ///         },
+    ///         Landmark {
+    ///             name: "National Museum of Nature and Science".to_string(),
+    ///             r#type: "museum".to_string()
+    ///         },
+    ///     ]
+    /// );
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub async fn collection_group_query<'de, T: Deserialize<'de>>(
+        &mut self,
+        collection_name: impl Into<String>,
+        filter: Filter,
+    ) -> Result<FirebaseStream<T, FirebaseError>, FirebaseError> {
+        self.query_internal(ApiQueryOptions {
+            parent: self.root_resource_path.clone(),
+            collection_name: collection_name.into(),
+            filter: Some(filter),
+            limit: None,
+            should_search_descendants: true,
+        })
+        .await
+    }
+
     fn get_name_with(&self, item: impl Display) -> String {
         format!("{}/{}", self.root_resource_path, item)
+    }
+
+    fn split_collection_parent_and_name(
+        &self,
+        collection: &CollectionReference,
+    ) -> (String, String) {
+        let parent = collection
+            .parent()
+            .map(|p| self.get_name_with(p))
+            .unwrap_or_else(|| self.root_resource_path.clone());
+        let name = collection.name().to_string();
+
+        (parent, name)
     }
 }
 
