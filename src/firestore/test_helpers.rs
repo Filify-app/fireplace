@@ -1,9 +1,6 @@
 use std::env;
 
-use crate::{
-    firestore::client::FirestoreClient,
-    token::{FirebaseTokenProvider, ServiceAccount},
-};
+use crate::{firestore::client::FirestoreClient, ServiceAccount};
 
 use super::client::FirestoreClientOptions;
 
@@ -16,12 +13,8 @@ pub async fn initialise() -> Result<FirestoreClient, anyhow::Error> {
         private_key: env::var("FIREBASE_PRIVATE_KEY")?.replace(r"\n", "\n"),
     };
 
-    let project_id = service_account.project_id.clone();
-    let token_provider = FirebaseTokenProvider::new(service_account);
-
     let client_options = FirestoreClientOptions::default();
-
-    let client = FirestoreClient::initialise(&project_id, token_provider, client_options)
+    let client = FirestoreClient::initialise(service_account, client_options)
         .await
         .unwrap();
 

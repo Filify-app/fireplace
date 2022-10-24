@@ -21,11 +21,12 @@ use serde::{Deserialize, Serialize};
 
 use crate::error::FirebaseError;
 use crate::firestore::serde::deserialize_firestore_document;
-use crate::token::FirebaseTokenProvider;
+use crate::ServiceAccount;
 
 use super::query::Filter;
 use super::reference::{CollectionReference, DocumentReference};
 use super::serde::serialize_to_document;
+use super::token_provider::FirestoreTokenProvider;
 
 mod options;
 
@@ -40,7 +41,7 @@ pub struct FirestoreClient {
     client: GrpcFirestoreClient<InterceptedService<Channel, InterceptorFunction>>,
     grpc_channel: Channel,
     project_id: String,
-    token_provider: FirebaseTokenProvider,
+    token_provider: FirestoreTokenProvider,
     root_resource_path: String,
 }
 
@@ -55,7 +56,7 @@ impl Clone for FirestoreClient {
     }
 }
 
-fn create_auth_interceptor(mut token_provider: FirebaseTokenProvider) -> InterceptorFunction {
+fn create_auth_interceptor(mut token_provider: FirestoreTokenProvider) -> InterceptorFunction {
     Box::new(move |mut req: Request<()>| {
         let token = token_provider
             .get_token()
@@ -77,8 +78,7 @@ impl FirestoreClient {
     /// Initialise a new client that can be used to interact with a Firestore
     /// database.
     pub async fn initialise(
-        project_id: &str,
-        token_provider: FirebaseTokenProvider,
+        service_account: ServiceAccount,
         options: FirestoreClientOptions,
     ) -> Result<Self, FirebaseError> {
         let channel = Channel::from_shared(options.host_url.clone())
@@ -87,17 +87,20 @@ impl FirestoreClient {
             .await
             .context("Failed to create channel to endpoint")?;
 
+        let project_id = service_account.project_id.clone();
+        let token_provider = FirestoreTokenProvider::new(service_account);
+
         Ok(Self::from_channel(
             channel,
             token_provider,
-            project_id,
+            &project_id,
             options,
         ))
     }
 
     fn from_channel(
         channel: Channel,
-        token_provider: FirebaseTokenProvider,
+        token_provider: FirestoreTokenProvider,
         project_id: &str,
         options: FirestoreClientOptions,
     ) -> Self {
