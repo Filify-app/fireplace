@@ -8,8 +8,7 @@ use firestore_grpc::v1::firestore_client::FirestoreClient as GrpcFirestoreClient
 use firestore_grpc::v1::run_query_request::QueryType;
 use firestore_grpc::v1::structured_query::CollectionSelector;
 use firestore_grpc::v1::{
-    CreateDocumentRequest, DocumentMask, ListDocumentsRequest, RunQueryRequest, StructuredQuery,
-    UpdateDocumentRequest,
+    CreateDocumentRequest, DocumentMask, RunQueryRequest, StructuredQuery, UpdateDocumentRequest,
 };
 use firestore_grpc::{
     tonic::{
@@ -17,7 +16,7 @@ use firestore_grpc::{
     },
     v1::GetDocumentRequest,
 };
-use futures::{stream, Stream, StreamExt, TryStreamExt};
+use futures::{Stream, StreamExt, TryStreamExt};
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 
@@ -912,7 +911,8 @@ impl FirestoreClient {
     /// }
     ///
     /// let mut docs: Vec<Emoji> = client
-    ///     .get_documents(collection("emojis"))
+    ///     .get_documents(&collection("emojis"))
+    ///     .await?
     ///     .try_collect()
     ///     .await?;
     ///
@@ -932,77 +932,20 @@ impl FirestoreClient {
     /// # Ok(())
     /// # }
     /// ```
-    pub fn get_documents<T: DeserializeOwned + Send>(
-        &self,
-        collection_ref: CollectionReference,
-    ) -> FirebaseStream<T, FirebaseError> {
-        enum State {
-            Start,
-            NextPage(String),
-            End,
-        }
+    pub async fn get_documents<T: DeserializeOwned + Send>(
+        &mut self,
+        collection_ref: &CollectionReference,
+    ) -> Result<FirebaseStream<T, FirebaseError>, FirebaseError> {
+        let (parent, collection_name) = self.split_collection_parent_and_name(collection_ref);
 
-        let initial_state = (State::Start, self.clone(), collection_ref);
-        let pagination_unfolder = stream::unfold(initial_state, |state| async move {
-            let (stage, mut client, collection_ref) = state;
-
-            let page_token = match stage {
-                State::Start => "".to_string(),
-                State::NextPage(token) => token,
-                State::End => return None,
-            };
-
-            let (parent, collection_name) =
-                client.split_collection_parent_and_name(&collection_ref);
-            let request = ListDocumentsRequest {
-                parent,
-                collection_id: collection_name,
-                page_size: 500,
-                page_token,
-                order_by: String::new(),
-                mask: None,
-                // This setting skips documents without any fields
-                show_missing: false,
-                consistency_selector: None,
-            };
-
-            let result = client
-                .client
-                .list_documents(request)
-                .await
-                .map_err(|e| anyhow!(e));
-
-            match result {
-                Ok(res) => {
-                    let message = res.into_inner();
-
-                    let next_state = if !message.next_page_token.is_empty() {
-                        State::NextPage(message.next_page_token)
-                    } else {
-                        State::End
-                    };
-
-                    Some((Ok(message.documents), (next_state, client, collection_ref)))
-                }
-                Err(e) => Some((Err(e), (State::End, client, collection_ref))),
-            }
-        });
-
-        let doc_stream = pagination_unfolder
-            .map(|res| match res {
-                Ok(res) => {
-                    let docs: Vec<Result<T, FirebaseError>> = res
-                        .into_iter()
-                        .map(|doc| deserialize_firestore_document::<T>(doc).map_err(|e| e.into()))
-                        .collect();
-
-                    stream::iter(docs)
-                }
-                Err(err) => stream::iter(vec![Err(err.into())]),
-            })
-            .flatten();
-
-        doc_stream.boxed()
+        self.query_internal(ApiQueryOptions {
+            parent,
+            collection_name,
+            filter: None,
+            limit: None,
+            should_search_descendants: false,
+        })
+        .await
     }
 
     fn get_name_with(&self, item: impl Display) -> String {
