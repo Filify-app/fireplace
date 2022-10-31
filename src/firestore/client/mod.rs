@@ -8,7 +8,8 @@ use firestore_grpc::v1::firestore_client::FirestoreClient as GrpcFirestoreClient
 use firestore_grpc::v1::run_query_request::QueryType;
 use firestore_grpc::v1::structured_query::CollectionSelector;
 use firestore_grpc::v1::{
-    CreateDocumentRequest, DocumentMask, RunQueryRequest, StructuredQuery, UpdateDocumentRequest,
+    CreateDocumentRequest, DeleteDocumentRequest, DocumentMask, RunQueryRequest, StructuredQuery,
+    UpdateDocumentRequest,
 };
 use firestore_grpc::{
     tonic::{
@@ -483,6 +484,57 @@ impl FirestoreClient {
         let deserialized = deserialize_firestore_document::<O>(doc)?;
 
         Ok(deserialized)
+    }
+
+    /// Deletes a document from the database. Whether the document exists or not
+    /// makes no difference.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # #[tokio::main]
+    /// # async fn main() {
+    /// # let mut client = fireplace::firestore::test_helpers::initialise().await.unwrap();
+    /// use fireplace::firestore::collection;
+    /// use ulid::Ulid;
+    ///
+    /// let doc_ref = collection("pokemon").doc("pikachu");
+    ///
+    /// client
+    ///     .set_document(&doc_ref, &serde_json::json!({ "name": "Pikachu" }))
+    ///     .await?;
+    ///
+    /// client.delete_document(&doc_ref).await?;
+    ///
+    /// assert_eq!(
+    ///     client.get_document::<serde_json::Value>(&doc_ref).await?,
+    ///     None
+    /// );
+    ///
+    /// // We can also just "delete" non-existing documents without error
+    /// client
+    ///     .delete_document(&collection("pokemon").doc(Ulid::new()))
+    ///     .await?;
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub async fn delete_document(
+        &mut self,
+        doc_ref: &DocumentReference,
+    ) -> Result<(), FirebaseError> {
+        let name = self.get_name_with(doc_ref);
+
+        let request = DeleteDocumentRequest {
+            name,
+            current_document: None,
+        };
+
+        self.client
+            .delete_document(request)
+            .await
+            .context("Failed to delete document")?;
+
+        Ok(())
     }
 
     /// Query a collection for documents that fulfill the given criteria.
