@@ -493,7 +493,7 @@ impl FirestoreClient {
     ///
     /// ```
     /// # #[tokio::main]
-    /// # async fn main() {
+    /// # async fn main() -> Result<(), Box<dyn std::error::Error>> {
     /// # let mut client = fireplace::firestore::test_helpers::initialise().await.unwrap();
     /// use fireplace::firestore::collection;
     /// use ulid::Ulid;
