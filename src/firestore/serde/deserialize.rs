@@ -42,7 +42,7 @@ impl<'de> de::Deserializer<'de> for FirestoreValueDeserializer {
             MapValue(m) => visitor.visit_map(MapDeserializer::new(m)),
             ArrayValue(a) => visitor.visit_seq(ArrayDeserializer::new(a)),
             TimestampValue(t) => visitor.visit_i64(t.seconds),
-            ReferenceValue(r) => visitor.visit_str(&r),
+            ReferenceValue(r) => visitor.visit_str(&strip_reference_prefix(&r)),
             BytesValue(_) => Err(Error::Message(
                 "deserialization of bytes is not implemented in this library".to_string(),
             )),
@@ -277,6 +277,11 @@ impl<'de> de::Deserializer<'de> for FirestoreValueDeserializer {
     {
         self.deserialize_any(visitor)
     }
+}
+
+fn strip_reference_prefix(reference: &str) -> String {
+    // Format: projects/{project_id}/databases/{database_id}/documents/{document_path}
+    reference.split('/').skip(5).collect::<Vec<_>>().join("/")
 }
 
 struct MapDeserializer {
@@ -616,7 +621,7 @@ mod tests {
         let result: serde_json::Value = deserialize_firestore_document(doc).unwrap();
         assert_eq!(
             result,
-            serde_json::json!({ "topping_reference": "projects/pizzaproject/databases/(default)/documents/pizzas/hawaii/toppings/pineapple" })
+            serde_json::json!({ "topping_reference": "pizzas/hawaii/toppings/pineapple" })
         );
     }
 

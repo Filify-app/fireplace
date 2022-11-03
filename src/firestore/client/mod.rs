@@ -27,7 +27,7 @@ use crate::ServiceAccount;
 
 use super::query::{ApiQueryOptions, Filter};
 use super::reference::{CollectionReference, DocumentReference};
-use super::serde::serialize_to_document;
+use super::serde::DocumentSerializer;
 use super::token_provider::FirestoreTokenProvider;
 
 mod options;
@@ -277,7 +277,7 @@ impl FirestoreClient {
     ) -> Result<String, FirebaseError> {
         // We should provide no name or timestamps when creating a document
         // according to Google's Firestore API reference.
-        let doc = serialize_to_document(document, None, None, None)?;
+        let doc = DocumentSerializer::new(self.root_resource_path.clone()).serialize(document)?;
 
         let (parent, collection_name) = self.split_collection_parent_and_name(collection_ref);
         let request = CreateDocumentRequest {
@@ -339,7 +339,7 @@ impl FirestoreClient {
         document: &T,
     ) -> Result<(), FirebaseError> {
         let name = self.get_name_with(doc_ref);
-        let doc = serialize_to_document(document, Some(name), None, None)?;
+        let doc = self.serializer().name(name).serialize(document)?;
 
         let request = UpdateDocumentRequest {
             document: Some(doc),
@@ -463,7 +463,7 @@ impl FirestoreClient {
         fields: &[&str],
     ) -> Result<O, FirebaseError> {
         let name = self.get_name_with(doc_ref);
-        let doc = serialize_to_document(document, Some(name), None, None)?;
+        let doc = self.serializer().name(name).serialize(document)?;
 
         let request = UpdateDocumentRequest {
             document: Some(doc),
@@ -1015,6 +1015,10 @@ impl FirestoreClient {
         let name = collection.name().to_string();
 
         (parent, name)
+    }
+
+    fn serializer(&self) -> DocumentSerializer {
+        DocumentSerializer::new(self.root_resource_path.clone())
     }
 }
 

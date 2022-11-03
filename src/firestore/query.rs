@@ -136,7 +136,8 @@ fn create_field_filter<T: Serialize>(
     query_op: impl QueryOperator<T>,
 ) -> Result<FieldFilter, FirebaseError> {
     let val = query_op.get_value();
-    let value_type = serialize_to_value_type(val)?;
+    // DONT MERGE THIS
+    let value_type = serialize_to_value_type(val, "")?;
     let firestore_value = Value {
         value_type: Some(value_type),
     };

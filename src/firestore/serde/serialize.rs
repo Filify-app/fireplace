@@ -10,51 +10,80 @@ use serde::{
     Serialize, Serializer,
 };
 
+use crate::firestore::reference::{CollectionReference, DocumentReference};
+
 use super::Error;
 
-pub(crate) fn serialize_to_document<T: Serialize>(
-    value: &T,
+pub(crate) struct DocumentSerializer {
+    root_resource_path: String,
     name: Option<String>,
     create_time: Option<Timestamp>,
     update_time: Option<Timestamp>,
-) -> Result<Document, Error> {
-    let value_type = serialize(value)?;
+}
 
-    match value_type {
-        ValueType::MapValue(map_value) => Ok(Document {
-            create_time,
-            update_time,
-            name: name.unwrap_or_default(),
-            fields: map_value.fields,
-        }),
-        _ => Err(Error::InvalidDocument),
+impl DocumentSerializer {
+    pub fn new(root_resource_path: impl Into<String>) -> Self {
+        Self {
+            root_resource_path: root_resource_path.into(),
+            name: None,
+            create_time: None,
+            update_time: None,
+        }
+    }
+
+    pub fn name(mut self, name: impl Into<String>) -> Self {
+        self.name = Some(name.into());
+        self
+    }
+
+    pub fn create_time(mut self, timestamp: Timestamp) -> Self {
+        self.create_time = Some(timestamp);
+        self
+    }
+
+    pub fn update_time(mut self, timestamp: Timestamp) -> Self {
+        self.update_time = Some(timestamp);
+        self
+    }
+
+    pub fn serialize<T: Serialize>(self, value: &T) -> Result<Document, Error> {
+        let value_type = serialize(value, &self.root_resource_path)?;
+
+        match value_type {
+            ValueType::MapValue(map_value) => Ok(Document {
+                create_time: self.create_time,
+                update_time: self.update_time,
+                name: self.name.unwrap_or_default(),
+                fields: map_value.fields,
+            }),
+            _ => Err(Error::InvalidDocument),
+        }
     }
 }
 
-pub(crate) fn serialize_to_value_type<T: Serialize>(value: &T) -> Result<ValueType, Error> {
-    let value_type = serialize(value)?;
+pub(crate) fn serialize_to_value_type<T: Serialize>(
+    value: &T,
+    root_resource_path: &str,
+) -> Result<ValueType, Error> {
+    let value_type = serialize(value, root_resource_path)?;
     Ok(value_type)
 }
 
-struct FirestoreValueSerializer;
-
-impl FirestoreValueSerializer {
-    fn new() -> Self {
-        Self
-    }
+struct FirestoreValueSerializer<'a> {
+    root_resource_path: &'a str,
 }
 
-impl Serializer for FirestoreValueSerializer {
+impl<'a> Serializer for FirestoreValueSerializer<'a> {
     type Ok = ValueType;
     type Error = Error;
 
-    type SerializeSeq = ArraySerializer;
-    type SerializeTuple = TupleSerializer;
-    type SerializeTupleStruct = TupleStructSerializer;
-    type SerializeTupleVariant = TupleVariantSerializer;
-    type SerializeMap = MapSerializer;
-    type SerializeStruct = StructSerializer;
-    type SerializeStructVariant = StructVariantSerializer;
+    type SerializeSeq = ArraySerializer<'a>;
+    type SerializeTuple = TupleSerializer<'a>;
+    type SerializeTupleStruct = TupleStructSerializer<'a>;
+    type SerializeTupleVariant = TupleVariantSerializer<'a>;
+    type SerializeMap = MapSerializer<'a>;
+    type SerializeStruct = StructSerializerKind<'a>;
+    type SerializeStructVariant = StructVariantSerializer<'a>;
 
     fn serialize_bool(self, v: bool) -> Result<Self::Ok, Self::Error> {
         Ok(ValueType::BooleanValue(v))
@@ -176,11 +205,11 @@ impl Serializer for FirestoreValueSerializer {
     }
 
     fn serialize_seq(self, len: Option<usize>) -> Result<Self::SerializeSeq, Self::Error> {
-        Ok(ArraySerializer::new(len))
+        Ok(ArraySerializer::new(len, self.root_resource_path))
     }
 
     fn serialize_tuple(self, len: usize) -> Result<Self::SerializeTuple, Self::Error> {
-        Ok(TupleSerializer::new(len))
+        Ok(TupleSerializer::new(len, self.root_resource_path))
     }
 
     fn serialize_tuple_struct(
@@ -188,7 +217,7 @@ impl Serializer for FirestoreValueSerializer {
         _name: &'static str,
         len: usize,
     ) -> Result<Self::SerializeTupleStruct, Self::Error> {
-        Ok(TupleStructSerializer::new(len))
+        Ok(TupleStructSerializer::new(len, self.root_resource_path))
     }
 
     fn serialize_tuple_variant(
@@ -198,19 +227,32 @@ impl Serializer for FirestoreValueSerializer {
         variant: &'static str,
         len: usize,
     ) -> Result<Self::SerializeTupleVariant, Self::Error> {
-        Ok(TupleVariantSerializer::new(variant, len))
+        Ok(TupleVariantSerializer::new(
+            variant,
+            len,
+            self.root_resource_path,
+        ))
     }
 
     fn serialize_map(self, len: Option<usize>) -> Result<Self::SerializeMap, Self::Error> {
-        Ok(MapSerializer::new(len))
+        Ok(MapSerializer::new(len, self.root_resource_path))
     }
 
     fn serialize_struct(
         self,
-        _name: &'static str,
+        name: &'static str,
         len: usize,
     ) -> Result<Self::SerializeStruct, Self::Error> {
-        Ok(StructSerializer::new(len))
+        let struct_serializer =
+            if name == DocumentReference::type_id() || name == CollectionReference::type_id() {
+                StructSerializerKind::ReferenceValue(ReferenceTypeSerializer::new(
+                    self.root_resource_path,
+                ))
+            } else {
+                StructSerializerKind::Other(StructSerializer::new(len, self.root_resource_path))
+            };
+
+        Ok(struct_serializer)
     }
 
     fn serialize_struct_variant(
@@ -220,36 +262,45 @@ impl Serializer for FirestoreValueSerializer {
         variant: &'static str,
         len: usize,
     ) -> Result<Self::SerializeStructVariant, Self::Error> {
-        Ok(StructVariantSerializer::new(variant, len))
+        Ok(StructVariantSerializer::new(
+            variant,
+            len,
+            self.root_resource_path,
+        ))
     }
 }
 
-fn serialize<T: ?Sized + Serialize>(value: &T) -> Result<ValueType, Error> {
-    let serializer = FirestoreValueSerializer::new();
+fn serialize<T: ?Sized + Serialize>(
+    value: &T,
+    root_resource_path: &str,
+) -> Result<ValueType, Error> {
+    let serializer = FirestoreValueSerializer { root_resource_path };
     value.serialize(serializer)
 }
 
-struct ArraySerializer {
+struct ArraySerializer<'a> {
     values: Vec<Value>,
+    root_resource_path: &'a str,
 }
 
-impl ArraySerializer {
-    fn new(len: Option<usize>) -> Self {
+impl<'a> ArraySerializer<'a> {
+    fn new(len: Option<usize>, root_resource_path: &'a str) -> Self {
         Self {
             values: match len {
                 Some(l) => Vec::with_capacity(l),
                 None => Vec::new(),
             },
+            root_resource_path,
         }
     }
 }
 
-impl SerializeSeq for ArraySerializer {
+impl<'a> SerializeSeq for ArraySerializer<'a> {
     type Ok = ValueType;
     type Error = Error;
 
     fn serialize_element<T: ?Sized + Serialize>(&mut self, value: &T) -> Result<(), Self::Error> {
-        let value_type = serialize(value)?;
+        let value_type = serialize(value, self.root_resource_path)?;
         self.values.push(Value {
             value_type: Some(value_type),
         });
@@ -263,29 +314,31 @@ impl SerializeSeq for ArraySerializer {
     }
 }
 
-struct MapSerializer {
+struct MapSerializer<'a> {
     fields: HashMap<String, Value>,
     next_key: Option<String>,
+    root_resource_path: &'a str,
 }
 
-impl MapSerializer {
-    fn new(size: Option<usize>) -> Self {
+impl<'a> MapSerializer<'a> {
+    fn new(size: Option<usize>, root_resource_path: &'a str) -> Self {
         Self {
             fields: match size {
                 Some(s) => HashMap::with_capacity(s),
                 None => HashMap::new(),
             },
             next_key: None,
+            root_resource_path,
         }
     }
 }
 
-impl SerializeMap for MapSerializer {
+impl<'a> SerializeMap for MapSerializer<'a> {
     type Ok = ValueType;
     type Error = Error;
 
     fn serialize_key<T: ?Sized + Serialize>(&mut self, key: &T) -> Result<(), Self::Error> {
-        self.next_key = match serialize(key)? {
+        self.next_key = match serialize(key, self.root_resource_path)? {
             ValueType::StringValue(s) => Some(s),
             other => return Err(Error::InvalidKey(other)),
         };
@@ -294,7 +347,7 @@ impl SerializeMap for MapSerializer {
 
     fn serialize_value<T: ?Sized + Serialize>(&mut self, value: &T) -> Result<(), Self::Error> {
         let key = self.next_key.take().unwrap_or_default();
-        let value_type = serialize(value)?;
+        let value_type = serialize(value, self.root_resource_path)?;
         self.fields.insert(
             key,
             Value {
@@ -311,19 +364,12 @@ impl SerializeMap for MapSerializer {
     }
 }
 
-struct StructSerializer {
-    fields: HashMap<String, Value>,
+enum StructSerializerKind<'a> {
+    ReferenceValue(ReferenceTypeSerializer<'a>),
+    Other(StructSerializer<'a>),
 }
 
-impl StructSerializer {
-    fn new(size: usize) -> Self {
-        Self {
-            fields: HashMap::with_capacity(size),
-        }
-    }
-}
-
-impl SerializeStruct for StructSerializer {
+impl<'a> SerializeStruct for StructSerializerKind<'a> {
     type Ok = ValueType;
     type Error = Error;
 
@@ -332,7 +378,44 @@ impl SerializeStruct for StructSerializer {
         key: &'static str,
         value: &T,
     ) -> Result<(), Self::Error> {
-        let value_type = serialize(value)?;
+        match self {
+            StructSerializerKind::ReferenceValue(r) => r.serialize_field(key, value),
+            StructSerializerKind::Other(o) => o.serialize_field(key, value),
+        }
+    }
+
+    fn end(self) -> Result<Self::Ok, Self::Error> {
+        match self {
+            StructSerializerKind::ReferenceValue(r) => r.end(),
+            StructSerializerKind::Other(o) => o.end(),
+        }
+    }
+}
+
+struct StructSerializer<'a> {
+    fields: HashMap<String, Value>,
+    root_resource_path: &'a str,
+}
+
+impl<'a> StructSerializer<'a> {
+    fn new(size: usize, root_resource_path: &'a str) -> Self {
+        Self {
+            fields: HashMap::with_capacity(size),
+            root_resource_path,
+        }
+    }
+}
+
+impl<'a> SerializeStruct for StructSerializer<'a> {
+    type Ok = ValueType;
+    type Error = Error;
+
+    fn serialize_field<T: ?Sized + Serialize>(
+        &mut self,
+        key: &'static str,
+        value: &T,
+    ) -> Result<(), Self::Error> {
+        let value_type = serialize(value, self.root_resource_path)?;
         self.fields.insert(
             key.to_string(),
             Value {
@@ -349,21 +432,23 @@ impl SerializeStruct for StructSerializer {
     }
 }
 
-struct StructVariantSerializer {
-    fields: HashMap<String, Value>,
-    name: &'static str,
+struct ReferenceTypeSerializer<'a> {
+    relative_path: Option<String>,
+    root_resource_path: &'a str,
 }
 
-impl StructVariantSerializer {
-    fn new(name: &'static str, size: usize) -> Self {
+impl<'a> ReferenceTypeSerializer<'a> {
+    fn new(root_resource_path: &'a str) -> Self {
         Self {
-            fields: HashMap::with_capacity(size),
-            name,
+            relative_path: None,
+            root_resource_path,
         }
     }
 }
 
-impl SerializeStructVariant for StructVariantSerializer {
+const REF_TYPE_RELATIVE_PATH_KEY: &str = "relative_path";
+
+impl<'a> SerializeStruct for ReferenceTypeSerializer<'a> {
     type Ok = ValueType;
     type Error = Error;
 
@@ -372,7 +457,57 @@ impl SerializeStructVariant for StructVariantSerializer {
         key: &'static str,
         value: &T,
     ) -> Result<(), Self::Error> {
-        let value_type = serialize(value)?;
+        match (key, serialize(value, self.root_resource_path)?) {
+            (REF_TYPE_RELATIVE_PATH_KEY, ValueType::StringValue(s)) => {
+                self.relative_path = Some(s);
+                Ok(())
+            }
+            _ => Err(Error::Message(
+                "expected valid relative path for reference".into(),
+            )),
+        }
+    }
+
+    fn end(self) -> Result<Self::Ok, Self::Error> {
+        self.relative_path
+            .map(|rel_path| {
+                ValueType::ReferenceValue(format!("{}/{}", self.root_resource_path, rel_path))
+            })
+            .ok_or_else(|| {
+                Error::Message(format!(
+                    "missing key {} on firestore reference value",
+                    REF_TYPE_RELATIVE_PATH_KEY
+                ))
+            })
+    }
+}
+
+struct StructVariantSerializer<'a> {
+    fields: HashMap<String, Value>,
+    name: &'static str,
+    root_resource_path: &'a str,
+}
+
+impl<'a> StructVariantSerializer<'a> {
+    fn new(name: &'static str, size: usize, root_resource_path: &'a str) -> Self {
+        Self {
+            fields: HashMap::with_capacity(size),
+            name,
+            root_resource_path,
+        }
+    }
+}
+
+impl<'a> SerializeStructVariant for StructVariantSerializer<'a> {
+    type Ok = ValueType;
+    type Error = Error;
+
+    fn serialize_field<T: ?Sized + Serialize>(
+        &mut self,
+        key: &'static str,
+        value: &T,
+    ) -> Result<(), Self::Error> {
+        let value_type = serialize(value, self.root_resource_path)?;
         self.fields.insert(
             key.to_string(),
             Value {
@@ -399,26 +534,28 @@ impl SerializeStructVariant for StructVariantSerializer {
     }
 }
 
-struct TupleVariantSerializer {
+struct TupleVariantSerializer<'a> {
     values: Vec<Value>,
     name: &'static str,
+    root_resource_path: &'a str,
 }
 
-impl TupleVariantSerializer {
-    fn new(name: &'static str, len: usize) -> Self {
+impl<'a> TupleVariantSerializer<'a> {
+    fn new(name: &'static str, len: usize, root_resource_path: &'a str) -> Self {
         Self {
             values: Vec::with_capacity(len),
             name,
+            root_resource_path,
         }
     }
 }
 
-impl SerializeTupleVariant for TupleVariantSerializer {
+impl<'a> SerializeTupleVariant for TupleVariantSerializer<'a> {
     type Ok = ValueType;
     type Error = Error;
 
     fn serialize_field<T: ?Sized + Serialize>(&mut self, value: &T) -> Result<(), Self::Error> {
-        let value_type = serialize(value)?;
+        let value_type = serialize(value, self.root_resource_path)?;
         self.values.push(Value {
             value_type: Some(value_type),
         });
@@ -442,24 +579,26 @@ impl SerializeTupleVariant for TupleVariantSerializer {
     }
 }
 
-struct TupleStructSerializer {
+struct TupleStructSerializer<'a> {
     values: Vec<Value>,
+    root_resource_path: &'a str,
 }
 
-impl TupleStructSerializer {
-    fn new(len: usize) -> Self {
+impl<'a> TupleStructSerializer<'a> {
+    fn new(len: usize, root_resource_path: &'a str) -> Self {
         Self {
             values: Vec::with_capacity(len),
+            root_resource_path,
         }
     }
 }
 
-impl SerializeTupleStruct for TupleStructSerializer {
+impl<'a> SerializeTupleStruct for TupleStructSerializer<'a> {
     type Ok = ValueType;
     type Error = Error;
 
     fn serialize_field<T: ?Sized + Serialize>(&mut self, value: &T) -> Result<(), Self::Error> {
-        let value_type = serialize(value)?;
+        let value_type = serialize(value, self.root_resource_path)?;
         self.values.push(Value {
             value_type: Some(value_type),
         });
@@ -473,24 +612,26 @@ impl SerializeTupleStruct for TupleStructSerializer {
     }
 }
 
-struct TupleSerializer {
+struct TupleSerializer<'a> {
     values: Vec<Value>,
+    root_resource_path: &'a str,
 }
 
-impl TupleSerializer {
-    fn new(len: usize) -> Self {
+impl<'a> TupleSerializer<'a> {
+    fn new(len: usize, root_resource_path: &'a str) -> Self {
         Self {
             values: Vec::with_capacity(len),
+            root_resource_path,
         }
     }
 }
 
-impl SerializeTuple for TupleSerializer {
+impl<'a> SerializeTuple for TupleSerializer<'a> {
     type Ok = ValueType;
     type Error = Error;
 
     fn serialize_element<T: ?Sized + Serialize>(&mut self, value: &T) -> Result<(), Self::Error> {
-        let value_type = serialize(value)?;
+        let value_type = serialize(value, self.root_resource_path)?;
         self.values.push(Value {
             value_type: Some(value_type),
         });
@@ -511,7 +652,11 @@ mod tests {
     use firestore_grpc::v1::{value::ValueType, ArrayValue, Document, MapValue, Value};
     use serde::Serialize;
 
-    use crate::firestore::serde::serialize_to_document;
+    use crate::firestore::{
+        collection,
+        reference::{CollectionReference, DocumentReference},
+        serde::DocumentSerializer,
+    };
 
     #[test]
     fn serialize_struct() {
@@ -525,7 +670,7 @@ mod tests {
             name: "Pep med drez".to_string(),
             price: 65,
         };
-        let doc = serialize_to_document(&value, None, None, None).unwrap();
+        let doc = DocumentSerializer::new("").serialize(&value).unwrap();
 
         assert_eq!(
             doc,
@@ -570,7 +715,7 @@ mod tests {
             pizza1: TestStructVariant::Pepperoni { price: 65 },
             pizza2: TestStructVariant::Hawaii { pineapple: true },
         };
-        let doc = serialize_to_document(&value, None, None, None).unwrap();
+        let doc = DocumentSerializer::new("").serialize(&value).unwrap();
 
         assert_eq!(
             doc,
@@ -627,7 +772,7 @@ mod tests {
     #[test]
     fn serialize_map() {
         let value: HashMap<&str, i32> = HashMap::from_iter([("Pep med drez", 65)]);
-        let doc = serialize_to_document(&value, None, None, None).unwrap();
+        let doc = DocumentSerializer::new("").serialize(&value).unwrap();
 
         assert_eq!(
             doc,
@@ -661,7 +806,7 @@ mod tests {
         let value = TestStruct {
             pizza: TestTupleVariant::Pepperoni(65, "Pep med drez"),
         };
-        let doc = serialize_to_document(&value, None, None, None).unwrap();
+        let doc = DocumentSerializer::new("").serialize(&value).unwrap();
 
         assert_eq!(
             doc,
@@ -710,7 +855,7 @@ mod tests {
         let value = TestStruct {
             pizza: TestTupleStruct("Pep med drez", 65),
         };
-        let doc = serialize_to_document(&value, None, None, None).unwrap();
+        let doc = DocumentSerializer::new("").serialize(&value).unwrap();
 
         assert_eq!(
             doc,
@@ -749,7 +894,7 @@ mod tests {
         let value = TestStruct {
             pizza: ("Pep med drez", 65),
         };
-        let doc = serialize_to_document(&value, None, None, None).unwrap();
+        let doc = DocumentSerializer::new("").serialize(&value).unwrap();
 
         assert_eq!(
             doc,
@@ -788,7 +933,7 @@ mod tests {
         let value = TestStruct {
             toppings: vec!["pep", "drez"],
         };
-        let doc = serialize_to_document(&value, None, None, None).unwrap();
+        let doc = DocumentSerializer::new("").serialize(&value).unwrap();
 
         assert_eq!(
             doc,
@@ -827,7 +972,7 @@ mod tests {
             name: Some("bread"),
             topping: None,
         };
-        let doc = serialize_to_document(&value, None, None, None).unwrap();
+        let doc = DocumentSerializer::new("").serialize(&value).unwrap();
 
         assert_eq!(
             doc,
@@ -847,6 +992,70 @@ mod tests {
                         },
                     )
                 ]),
+                create_time: None,
+                update_time: None,
+            }
+        );
+    }
+
+    #[test]
+    fn serialize_document_reference() {
+        #[derive(Serialize)]
+        struct TestStruct {
+            pizza_ref: DocumentReference,
+        }
+
+        let value = TestStruct {
+            pizza_ref: collection("pizzas").doc("pep"),
+        };
+        let doc = DocumentSerializer::new("projects/pizzaproject/databases/(default)/documents")
+            .serialize(&value)
+            .unwrap();
+
+        assert_eq!(
+            doc,
+            Document {
+                name: String::new(),
+                fields: HashMap::from_iter(vec![(
+                    String::from("pizza_ref"),
+                    Value {
+                        value_type: Some(ValueType::ReferenceValue(String::from(
+                            "projects/pizzaproject/databases/(default)/documents/pizzas/pep"
+                        )))
+                    },
+                ),]),
+                create_time: None,
+                update_time: None,
+            }
+        );
+    }
+
+    #[test]
+    fn serialize_collection_reference() {
+        #[derive(Serialize)]
+        struct TestStruct {
+            toppings_ref: CollectionReference,
+        }
+
+        let value = TestStruct {
+            toppings_ref: collection("pizzas").doc("pep").collection("toppings"),
+        };
+        let doc = DocumentSerializer::new("projects/pizzaproject/databases/(default)/documents")
+            .serialize(&value)
+            .unwrap();
+
+        assert_eq!(
+            doc,
+            Document {
+                name: String::new(),
+                fields: HashMap::from_iter(vec![(
+                    String::from("toppings_ref"),
+                    Value {
+                        value_type: Some(ValueType::ReferenceValue(String::from(
+                            "projects/pizzaproject/databases/(default)/documents/pizzas/pep/toppings"
+                        )))
+                    },
+                ),]),
                 create_time: None,
                 update_time: None,
             }
