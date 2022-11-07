@@ -580,7 +580,7 @@ impl FirestoreClient {
     ///
     /// // Query for pizzas whose name field is "Hawaii"
     /// let hawaii_results: Vec<Pizza> = client
-    ///     .query(&collection("pizzas"), filter("name", EqualTo("Hawaii"))?)
+    ///     .query(&collection("pizzas"), filter("name", EqualTo("Hawaii")))
     ///     .await?
     ///     .try_collect()
     ///     .await?;
@@ -592,7 +592,7 @@ impl FirestoreClient {
     /// let mut cheese_results: Vec<Pizza> = client
     ///     .query(
     ///         &collection("pizzas"),
-    ///         filter("toppings", ArrayContains("cheese"))?,
+    ///         filter("toppings", ArrayContains("cheese")),
     ///     )
     ///     .await?
     ///     .try_collect()
@@ -607,7 +607,7 @@ impl FirestoreClient {
     ///
     /// // Query for pizzas with the name "pasta salad".
     /// let mut pasta_salad_results: Vec<Pizza> = client
-    ///     .query(&collection("pizzas"), filter("name", EqualTo("pasta salad"))?)
+    ///     .query(&collection("pizzas"), filter("name", EqualTo("pasta salad")))
     ///     .await?
     ///     .try_collect()
     ///     .await?;
@@ -663,7 +663,7 @@ impl FirestoreClient {
     /// let mut margherita_result: Option<Pizza> = client
     ///     .query_one(
     ///         &collection("pizzas"),
-    ///         filter("name", EqualTo("Margherita"))?,
+    ///         filter("name", EqualTo("Margherita")),
     ///     )
     ///     .await?;
     ///
@@ -672,7 +672,7 @@ impl FirestoreClient {
     ///
     /// // Query for pizzas with the name "pasta salad".
     /// let mut pasta_salad_result: Option<Pizza> = client
-    ///     .query_one(&collection("pizzas"), filter("name", EqualTo("pasta salad"))?)
+    ///     .query_one(&collection("pizzas"), filter("name", EqualTo("pasta salad")))
     ///     .await?;
     ///
     /// // We expect no results
@@ -900,7 +900,7 @@ impl FirestoreClient {
     /// }
     ///
     /// let mut landmarks: Vec<Landmark> = client
-    ///     .collection_group_query("landmarks", filter("type", EqualTo("museum"))?)
+    ///     .collection_group_query("landmarks", filter("type", EqualTo("museum")))
     ///     .await?
     ///     .try_collect()
     ///     .await?;
