@@ -90,7 +90,7 @@ impl<T: Eq + Serialize> QueryOperator<T> for ArrayContains<T> {
     }
 }
 
-pub fn filter<'a, T: Serialize + 'a>(
+pub fn filter<'a, T: Serialize + 'a + Send>(
     field: impl Into<String> + 'a,
     check_against: impl QueryOperator<T> + 'a,
 ) -> Filter<'a> {
@@ -106,11 +106,11 @@ pub enum Filter<'a> {
 pub struct FieldFilter<'a> {
     field: String,
     op: FieldFilterOperator,
-    value: Box<dyn erased_serde::Serialize + 'a>,
+    value: Box<dyn erased_serde::Serialize + 'a + Send>,
 }
 
 impl<'a> Filter<'a> {
-    pub fn and<T: Serialize + 'a>(
+    pub fn and<T: Serialize + 'a + Send>(
         self,
         field: impl Into<String> + 'a,
         check_against: impl QueryOperator<T> + 'a,
@@ -131,7 +131,7 @@ impl<'a> Filter<'a> {
 
 fn create_field_filter<'a, T, Q>(field: String, query_op: Q) -> FieldFilter<'a>
 where
-    T: Serialize + 'a,
+    T: Serialize + 'a + Send,
     Q: QueryOperator<T> + 'a,
 {
     let op = query_op.get_operator_code();
@@ -286,5 +286,11 @@ mod tests {
         };
 
         assert_eq!(serialized, expected);
+    }
+
+    #[test]
+    fn implements_send() {
+        fn assert_send<T: Send>() {}
+        assert_send::<super::Filter>();
     }
 }
