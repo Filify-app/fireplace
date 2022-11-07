@@ -277,7 +277,7 @@ impl FirestoreClient {
     ) -> Result<String, FirebaseError> {
         // We should provide no name or timestamps when creating a document
         // according to Google's Firestore API reference.
-        let doc = DocumentSerializer::new(self.root_resource_path.clone()).serialize(document)?;
+        let doc = self.serializer().serialize(document)?;
 
         let (parent, collection_name) = self.split_collection_parent_and_name(collection_ref);
         let request = CreateDocumentRequest {
