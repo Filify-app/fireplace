@@ -36,16 +36,6 @@ impl DocumentSerializer {
         self
     }
 
-    pub fn create_time(mut self, timestamp: Timestamp) -> Self {
-        self.create_time = Some(timestamp);
-        self
-    }
-
-    pub fn update_time(mut self, timestamp: Timestamp) -> Self {
-        self.update_time = Some(timestamp);
-        self
-    }
-
     pub fn serialize<T: Serialize>(self, value: &T) -> Result<Document, Error> {
         let value_type = serialize(value, &self.root_resource_path)?;
 
