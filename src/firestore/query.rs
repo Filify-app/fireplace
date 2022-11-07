@@ -18,7 +18,7 @@ use firestore_grpc::v1::{
     structured_query::{
         composite_filter::Operator as CompositeFilterOperator,
         field_filter::Operator as FieldFilterOperator, filter::FilterType as GrpcFilterType,
-        CompositeFilter as GrpcCompositeFilter, FieldFilter as GrpcFieldFilter,
+        CompositeFilter as GrpcCompositeFilter, FieldFilter as GrpcFieldFilter, FieldReference,
         Filter as GrpcFilter,
     },
     Value,
@@ -47,7 +47,7 @@ use super::serde::serialize_to_value_type;
 /// To see which query operators are supported by Firestore, see the [official Firestore documentation](https://firebase.google.com/docs/firestore/query-data/queries#query_operators).
 pub trait QueryOperator<T: Serialize> {
     /// Returns the value that the document field will be checked against.
-    fn get_value(&self) -> &T;
+    fn get_value(self) -> T;
 
     /// Returns the Firestore field filter operator code that represents which
     /// filter operation will be applied to the value by Firestore.
@@ -57,8 +57,8 @@ pub trait QueryOperator<T: Serialize> {
 pub struct LessThan<T: Ord + Serialize>(pub T);
 
 impl<T: Ord + Serialize> QueryOperator<T> for LessThan<T> {
-    fn get_value(&self) -> &T {
-        &self.0
+    fn get_value(self) -> T {
+        self.0
     }
 
     fn get_operator_code(&self) -> FieldFilterOperator {
@@ -66,11 +66,11 @@ impl<T: Ord + Serialize> QueryOperator<T> for LessThan<T> {
     }
 }
 
-pub struct EqualTo<T: Eq + Serialize>(pub T);
+pub struct EqualTo<T: PartialEq + Serialize>(pub T);
 
-impl<T: Eq + Serialize> QueryOperator<T> for EqualTo<T> {
-    fn get_value(&self) -> &T {
-        &self.0
+impl<T: PartialEq + Serialize> QueryOperator<T> for EqualTo<T> {
+    fn get_value(self) -> T {
+        self.0
     }
 
     fn get_operator_code(&self) -> FieldFilterOperator {
@@ -81,8 +81,8 @@ impl<T: Eq + Serialize> QueryOperator<T> for EqualTo<T> {
 pub struct ArrayContains<T: Eq + Serialize>(pub T);
 
 impl<T: Eq + Serialize> QueryOperator<T> for ArrayContains<T> {
-    fn get_value(&self) -> &T {
-        &self.0
+    fn get_value(self) -> T {
+        self.0
     }
 
     fn get_operator_code(&self) -> FieldFilterOperator {
@@ -90,34 +90,32 @@ impl<T: Eq + Serialize> QueryOperator<T> for ArrayContains<T> {
     }
 }
 
-pub fn filter<T: Serialize>(
-    field: impl Into<String>,
-    check_against: impl QueryOperator<T>,
-) -> Result<Filter, FirebaseError> {
-    let field_filter = create_field_filter(field.into(), check_against)?;
-    Ok(Filter::Single(field_filter))
+pub fn filter<'a, T: Serialize + 'a>(
+    field: impl Into<String> + 'a,
+    check_against: impl QueryOperator<T> + 'a,
+) -> Filter<'a> {
+    let field_filter = create_field_filter(field.into(), check_against);
+    Filter::Single(field_filter)
 }
 
-#[derive(PartialEq, Debug)]
-pub enum Filter {
-    Composite(Vec<FieldFilter>),
-    Single(FieldFilter),
+pub enum Filter<'a> {
+    Composite(Vec<FieldFilter<'a>>),
+    Single(FieldFilter<'a>),
 }
 
-#[derive(PartialEq, Debug)]
-pub struct FieldFilter {
+pub struct FieldFilter<'a> {
     field: String,
     op: FieldFilterOperator,
-    value: Value,
+    value: Box<dyn erased_serde::Serialize + 'a>,
 }
 
-impl Filter {
-    pub fn and<T: Serialize>(
+impl<'a> Filter<'a> {
+    pub fn and<T: Serialize + 'a>(
         self,
-        field: impl Into<String>,
-        check_against: impl QueryOperator<T>,
-    ) -> Result<Self, FirebaseError> {
-        let other_field_filter = create_field_filter(field.into(), check_against)?;
+        field: impl Into<String> + 'a,
+        check_against: impl QueryOperator<T> + 'a,
+    ) -> Self {
+        let other_field_filter = create_field_filter(field.into(), check_against);
 
         let new_filter = match self {
             Filter::Composite(mut filters) => {
@@ -127,71 +125,98 @@ impl Filter {
             Filter::Single(filter) => Filter::Composite(vec![filter, other_field_filter]),
         };
 
-        Ok(new_filter)
+        new_filter
     }
 }
 
-fn create_field_filter<T: Serialize>(
-    field: String,
-    query_op: impl QueryOperator<T>,
-) -> Result<FieldFilter, FirebaseError> {
-    let val = query_op.get_value();
-    // DONT MERGE THIS
-    let value_type = serialize_to_value_type(val, "")?;
-    let firestore_value = Value {
-        value_type: Some(value_type),
+fn create_field_filter<'a, T, Q>(field: String, query_op: Q) -> FieldFilter<'a>
+where
+    T: Serialize + 'a,
+    Q: QueryOperator<T> + 'a,
+{
+    let op = query_op.get_operator_code();
+    let value = query_op.get_value();
+
+    FieldFilter {
+        field,
+        op,
+        value: Box::new(value),
+    }
+}
+
+pub(crate) fn try_into_grpc_filter(
+    filter: Filter,
+    root_resource_path: &str,
+) -> Result<GrpcFilter, FirebaseError> {
+    let filter_type = match filter {
+        Filter::Single(filter) => {
+            GrpcFilterType::FieldFilter(try_into_grpc_field_filter(filter, root_resource_path)?)
+        }
+        Filter::Composite(filters) => {
+            let f = filters
+                .into_iter()
+                .map(|f| {
+                    try_into_grpc_filter_type(f, root_resource_path).map(|ft| GrpcFilter {
+                        filter_type: Some(ft),
+                    })
+                })
+                .collect::<Result<Vec<_>, FirebaseError>>()?;
+            GrpcFilterType::CompositeFilter(GrpcCompositeFilter {
+                op: CompositeFilterOperator::And as i32,
+                filters: f,
+            })
+        }
     };
 
-    Ok(FieldFilter {
-        field,
-        op: query_op.get_operator_code(),
-        value: firestore_value,
+    Ok(GrpcFilter {
+        filter_type: Some(filter_type),
     })
 }
 
-impl From<Filter> for GrpcFilter {
-    fn from(filter: Filter) -> Self {
-        let filter_type = match filter {
-            Filter::Single(filter) => filter.into(),
-            Filter::Composite(filters) => {
-                let f = filters.into_iter().map(Into::into).collect();
-                GrpcFilterType::CompositeFilter(GrpcCompositeFilter {
-                    op: CompositeFilterOperator::And as i32,
-                    filters: f,
-                })
-            }
-        };
+fn try_into_grpc_filter_type(
+    field_filter: FieldFilter,
+    root_resource_path: &str,
+) -> Result<GrpcFilterType, FirebaseError> {
+    let value = serialize_to_value_type(&field_filter.value, root_resource_path)?;
+    let firestore_value = Value {
+        value_type: Some(value),
+    };
 
-        Self {
-            filter_type: Some(filter_type),
-        }
-    }
+    let filter_type = GrpcFilterType::FieldFilter(GrpcFieldFilter {
+        field: Some(firestore_grpc::v1::structured_query::FieldReference {
+            field_path: field_filter.field,
+        }),
+        op: field_filter.op as i32,
+        value: Some(firestore_value),
+    });
+
+    Ok(filter_type)
 }
 
-impl From<FieldFilter> for GrpcFilterType {
-    fn from(field_filter: FieldFilter) -> Self {
-        GrpcFilterType::FieldFilter(GrpcFieldFilter {
-            field: Some(firestore_grpc::v1::structured_query::FieldReference {
-                field_path: field_filter.field,
-            }),
-            op: field_filter.op as i32,
-            value: Some(field_filter.value),
-        })
-    }
+fn try_into_grpc_field_filter(
+    field_filter: FieldFilter,
+    root_resource_path: &str,
+) -> Result<GrpcFieldFilter, FirebaseError> {
+    let value_type = serialize_to_value_type(&field_filter.value, root_resource_path)?;
+    let value = Value {
+        value_type: Some(value_type),
+    };
+
+    let grpc_field_filter = GrpcFieldFilter {
+        field: Some(FieldReference {
+            field_path: field_filter.field,
+        }),
+        op: field_filter.op as i32,
+        value: Some(value),
+    };
+
+    Ok(grpc_field_filter)
 }
 
-impl From<FieldFilter> for GrpcFilter {
-    fn from(field_filter: FieldFilter) -> Self {
-        Self {
-            filter_type: Some(field_filter.into()),
-        }
-    }
-}
-
-pub(crate) struct ApiQueryOptions {
+pub(crate) struct ApiQueryOptions<'a> {
     pub parent: String,
     pub collection_name: String,
-    pub filter: Option<Filter>,
+    pub filter: Option<Filter<'a>>,
     pub limit: Option<i32>,
     /// Whether to search descendant collections with the same name
     pub should_search_descendants: bool,
@@ -199,52 +224,67 @@ pub(crate) struct ApiQueryOptions {
 
 #[cfg(test)]
 mod tests {
-    use firestore_grpc::v1::{structured_query, value::ValueType};
+    use firestore_grpc::v1::value::ValueType;
+
+    use crate::firestore::collection;
 
     use super::*;
 
     #[test]
     fn combine_operators() {
-        assert_eq!(
-            (|| filter("age", LessThan(42))?.and("name", EqualTo("Bob")))().unwrap(),
-            Filter::Composite(vec![
-                FieldFilter {
-                    field: "age".to_string(),
-                    op: FieldFilterOperator::LessThan,
-                    value: Value {
-                        value_type: Some(ValueType::IntegerValue(42)),
+        let query = filter("age", LessThan(42)).and("name", EqualTo("Bob"));
+        let serialized = try_into_grpc_filter(query, "").unwrap();
+
+        let expected = GrpcFilter {
+            filter_type: Some(GrpcFilterType::CompositeFilter(GrpcCompositeFilter {
+                op: CompositeFilterOperator::And as i32,
+                filters: vec![
+                    GrpcFilter {
+                        filter_type: Some(GrpcFilterType::FieldFilter(GrpcFieldFilter {
+                            field: Some(FieldReference {
+                                field_path: "age".to_string(),
+                            }),
+                            op: FieldFilterOperator::LessThan as i32,
+                            value: Some(Value {
+                                value_type: Some(ValueType::IntegerValue(42)),
+                            }),
+                        })),
                     },
-                },
-                FieldFilter {
-                    field: "name".to_string(),
-                    op: FieldFilterOperator::Equal,
-                    value: Value {
-                        value_type: Some(ValueType::StringValue("Bob".to_string())),
+                    GrpcFilter {
+                        filter_type: Some(GrpcFilterType::FieldFilter(GrpcFieldFilter {
+                            field: Some(FieldReference {
+                                field_path: "name".to_string(),
+                            }),
+                            op: FieldFilterOperator::Equal as i32,
+                            value: Some(Value {
+                                value_type: Some(ValueType::StringValue("Bob".to_string())),
+                            }),
+                        })),
                     },
-                },
-            ])
-        );
+                ],
+            })),
+        };
+
+        assert_eq!(serialized, expected);
     }
 
     #[test]
-    fn into_grpc_filter() {
-        let f: structured_query::Filter = filter("age", LessThan(42)).unwrap().into();
+    fn single_operator() {
+        let query = filter("age", EqualTo(collection("users").doc("bob")));
+        let serialized = try_into_grpc_filter(query, "prefix").unwrap();
 
-        assert_eq!(
-            f,
-            structured_query::Filter {
-                filter_type: Some(structured_query::filter::FilterType::FieldFilter(
-                    structured_query::FieldFilter {
-                        field: Some(structured_query::FieldReference {
-                            field_path: "age".to_string(),
-                        }),
-                        op: structured_query::field_filter::Operator::LessThan as i32,
-                        value: Some(Value {
-                            value_type: Some(ValueType::IntegerValue(42)),
-                        }),
-                    }
-                )),
-            }
-        )
+        let expected = GrpcFilter {
+            filter_type: Some(GrpcFilterType::FieldFilter(GrpcFieldFilter {
+                field: Some(FieldReference {
+                    field_path: "age".to_string(),
+                }),
+                op: FieldFilterOperator::Equal as i32,
+                value: Some(Value {
+                    value_type: Some(ValueType::ReferenceValue("prefix/users/bob".to_string())),
+                }),
+            })),
+        };
+
+        assert_eq!(serialized, expected);
     }
 }
