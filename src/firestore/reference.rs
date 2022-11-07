@@ -186,6 +186,18 @@ impl std::fmt::Display for DocumentReference {
     }
 }
 
+impl PartialEq for CollectionReference {
+    fn eq(&self, other: &Self) -> bool {
+        self.to_string() == other.to_string()
+    }
+}
+
+impl PartialEq for DocumentReference {
+    fn eq(&self, other: &Self) -> bool {
+        self.to_string() == other.to_string()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
