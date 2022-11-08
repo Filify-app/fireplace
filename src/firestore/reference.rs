@@ -1,9 +1,14 @@
-use std::sync::Arc;
+use std::{any::TypeId, sync::Arc};
+
+use anyhow::Context;
+use once_cell::sync::OnceCell;
+use serde::{ser::SerializeStruct, Deserialize, Deserializer, Serialize, Serializer};
 
 pub fn collection(name: impl Into<String>) -> CollectionReference {
     CollectionReference::new(name)
 }
 
+/// A reference to a Firestore document.
 #[derive(Debug, Clone)]
 pub struct DocumentReference(Arc<DocumentReferenceInner>);
 
@@ -21,6 +26,8 @@ struct DocumentReferenceInner {
     parent: CollectionReference,
     id: String,
 }
+
+static COLLECTION_REF_TYPE_ID: OnceCell<String> = OnceCell::new();
 
 impl CollectionReference {
     pub fn new(collection_name: impl Into<String>) -> Self {
@@ -44,7 +51,58 @@ impl CollectionReference {
     pub fn name(&self) -> &str {
         &self.0.name
     }
+
+    pub(crate) fn type_id() -> &'static str {
+        COLLECTION_REF_TYPE_ID.get_or_init(|| format!("{:?}", TypeId::of::<Self>()))
+    }
 }
+
+impl Serialize for CollectionReference {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let mut s = serializer.serialize_struct(Self::type_id(), 1)?;
+        s.serialize_field("relative_path", &self.to_string())?;
+        s.end()
+    }
+}
+
+impl TryFrom<String> for CollectionReference {
+    type Error = anyhow::Error;
+
+    fn try_from(value: String) -> Result<Self, Self::Error> {
+        let mut slash_sep = value.split('/');
+        let first = slash_sep.next().context("empty collection reference")?;
+        let remaining = slash_sep.collect::<Vec<_>>();
+        let mut parts = remaining.chunks_exact(2);
+
+        let mut col_ref = collection(first);
+        for part in parts.by_ref() {
+            let (doc_id, collection_id) = (part[0], part[1]);
+            col_ref = col_ref.doc(doc_id).collection(collection_id);
+        }
+
+        anyhow::ensure!(
+            parts.remainder().is_empty(),
+            "invalid amount of path segments in collection reference"
+        );
+
+        Ok(col_ref)
+    }
+}
+
+impl<'de> Deserialize<'de> for CollectionReference {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let s: String = Deserialize::deserialize(deserializer)?;
+        Self::try_from(s).map_err(serde::de::Error::custom)
+    }
+}
+
+static DOC_REF_TYPE_ID: OnceCell<String> = OnceCell::new();
 
 impl DocumentReference {
     pub fn collection(&self, name: impl Into<String>) -> CollectionReference {
@@ -60,6 +118,56 @@ impl DocumentReference {
 
     pub fn id(&self) -> &str {
         &self.0.id
+    }
+
+    pub(crate) fn type_id() -> &'static str {
+        DOC_REF_TYPE_ID.get_or_init(|| format!("{:?}", TypeId::of::<Self>()))
+    }
+}
+
+impl Serialize for DocumentReference {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let mut s = serializer.serialize_struct(Self::type_id(), 1)?;
+        s.serialize_field("relative_path", &self.to_string())?;
+        s.end()
+    }
+}
+
+impl TryFrom<String> for DocumentReference {
+    type Error = anyhow::Error;
+
+    fn try_from(value: String) -> Result<Self, Self::Error> {
+        let slash_sep = value.split('/').collect::<Vec<_>>();
+        let mut parts = slash_sep.chunks_exact(2);
+
+        let mut doc_ref = None;
+        for part in parts.by_ref() {
+            let (collection_id, doc_id) = (part[0], part[1]);
+            doc_ref = match doc_ref {
+                None => Some(collection(collection_id).doc(doc_id)),
+                Some(parent) => Some(parent.collection(collection_id).doc(doc_id)),
+            };
+        }
+
+        anyhow::ensure!(
+            parts.remainder().is_empty(),
+            "invalid amount of path segments in document reference"
+        );
+
+        doc_ref.context("empty document reference")
+    }
+}
+
+impl<'de> Deserialize<'de> for DocumentReference {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let s: String = Deserialize::deserialize(deserializer)?;
+        Self::try_from(s).map_err(serde::de::Error::custom)
     }
 }
 
@@ -90,6 +198,18 @@ impl std::fmt::Display for DocumentReference {
     }
 }
 
+impl PartialEq for CollectionReference {
+    fn eq(&self, other: &Self) -> bool {
+        self.to_string() == other.to_string()
+    }
+}
+
+impl PartialEq for DocumentReference {
+    fn eq(&self, other: &Self) -> bool {
+        self.to_string() == other.to_string()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -117,5 +237,55 @@ mod tests {
                 .to_string(),
             "planets/tatooine/people/luke"
         );
+    }
+
+    #[test]
+    fn deserialize_document_reference() {
+        #[derive(Debug, Deserialize)]
+        struct Test {
+            doc_ref: DocumentReference,
+        }
+
+        let tatooine: Test = serde_json::from_str(r#"{"doc_ref": "planets/tatooine"}"#).unwrap();
+        assert_eq!("planets/tatooine", tatooine.doc_ref.to_string());
+
+        let luke: Test =
+            serde_json::from_str(r#"{"doc_ref": "planets/tatooine/people/luke"}"#).unwrap();
+        assert_eq!("planets/tatooine/people/luke", luke.doc_ref.to_string());
+    }
+
+    #[test]
+    fn deserialize_invalid_document_reference_fails() {
+        #[derive(Debug, Deserialize)]
+        struct Test {
+            #[allow(unused)]
+            doc_ref: DocumentReference,
+        }
+
+        let res = serde_json::from_str::<Test>(r#"{"doc_ref": "planets"}"#);
+        assert!(res.is_err(), "expected error, got {:?}", res);
+    }
+
+    #[test]
+    fn deserialize_collection_reference() {
+        #[derive(Debug, Deserialize)]
+        struct Test {
+            col_ref: CollectionReference,
+        }
+
+        let test: Test = serde_json::from_str(r#"{"col_ref": "planets"}"#).unwrap();
+        assert_eq!("planets", test.col_ref.to_string());
+    }
+
+    #[test]
+    fn deserialize_invalid_collection_reference_fails() {
+        #[derive(Debug, Deserialize)]
+        struct Test {
+            #[allow(unused)]
+            col_ref: CollectionReference,
+        }
+
+        let res = serde_json::from_str::<Test>(r#"{"col_ref": "planets/tatooine"}"#);
+        assert!(res.is_err(), "expected error, got {:?}", res);
     }
 }

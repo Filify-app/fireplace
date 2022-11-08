@@ -25,9 +25,9 @@ use crate::error::FirebaseError;
 use crate::firestore::serde::deserialize_firestore_document;
 use crate::ServiceAccount;
 
-use super::query::{ApiQueryOptions, Filter};
+use super::query::{try_into_grpc_filter, ApiQueryOptions, Filter};
 use super::reference::{CollectionReference, DocumentReference};
-use super::serde::serialize_to_document;
+use super::serde::DocumentSerializer;
 use super::token_provider::FirestoreTokenProvider;
 
 mod options;
@@ -277,7 +277,7 @@ impl FirestoreClient {
     ) -> Result<String, FirebaseError> {
         // We should provide no name or timestamps when creating a document
         // according to Google's Firestore API reference.
-        let doc = serialize_to_document(document, None, None, None)?;
+        let doc = self.serializer().serialize(document)?;
 
         let (parent, collection_name) = self.split_collection_parent_and_name(collection_ref);
         let request = CreateDocumentRequest {
@@ -339,7 +339,7 @@ impl FirestoreClient {
         document: &T,
     ) -> Result<(), FirebaseError> {
         let name = self.get_name_with(doc_ref);
-        let doc = serialize_to_document(document, Some(name), None, None)?;
+        let doc = self.serializer().name(name).serialize(document)?;
 
         let request = UpdateDocumentRequest {
             document: Some(doc),
@@ -463,7 +463,7 @@ impl FirestoreClient {
         fields: &[&str],
     ) -> Result<O, FirebaseError> {
         let name = self.get_name_with(doc_ref);
-        let doc = serialize_to_document(document, Some(name), None, None)?;
+        let doc = self.serializer().name(name).serialize(document)?;
 
         let request = UpdateDocumentRequest {
             document: Some(doc),
@@ -580,7 +580,7 @@ impl FirestoreClient {
     ///
     /// // Query for pizzas whose name field is "Hawaii"
     /// let hawaii_results: Vec<Pizza> = client
-    ///     .query(&collection("pizzas"), filter("name", EqualTo("Hawaii"))?)
+    ///     .query(&collection("pizzas"), filter("name", EqualTo("Hawaii")))
     ///     .await?
     ///     .try_collect()
     ///     .await?;
@@ -592,7 +592,7 @@ impl FirestoreClient {
     /// let mut cheese_results: Vec<Pizza> = client
     ///     .query(
     ///         &collection("pizzas"),
-    ///         filter("toppings", ArrayContains("cheese"))?,
+    ///         filter("toppings", ArrayContains("cheese")),
     ///     )
     ///     .await?
     ///     .try_collect()
@@ -607,7 +607,7 @@ impl FirestoreClient {
     ///
     /// // Query for pizzas with the name "pasta salad".
     /// let mut pasta_salad_results: Vec<Pizza> = client
-    ///     .query(&collection("pizzas"), filter("name", EqualTo("pasta salad"))?)
+    ///     .query(&collection("pizzas"), filter("name", EqualTo("pasta salad")))
     ///     .await?
     ///     .try_collect()
     ///     .await?;
@@ -616,10 +616,10 @@ impl FirestoreClient {
     /// assert_eq!(pasta_salad_results, vec![]);
     /// # Ok(())
     /// # }
-    pub async fn query<'de, T: Deserialize<'de>>(
+    pub async fn query<'de, 'a, T: Deserialize<'de>>(
         &mut self,
         collection: &CollectionReference,
-        filter: Filter,
+        filter: Filter<'a>,
     ) -> Result<FirebaseStream<T, FirebaseError>, FirebaseError> {
         let (parent, collection_name) = self.split_collection_parent_and_name(collection);
 
@@ -663,7 +663,7 @@ impl FirestoreClient {
     /// let mut margherita_result: Option<Pizza> = client
     ///     .query_one(
     ///         &collection("pizzas"),
-    ///         filter("name", EqualTo("Margherita"))?,
+    ///         filter("name", EqualTo("Margherita")),
     ///     )
     ///     .await?;
     ///
@@ -672,17 +672,17 @@ impl FirestoreClient {
     ///
     /// // Query for pizzas with the name "pasta salad".
     /// let mut pasta_salad_result: Option<Pizza> = client
-    ///     .query_one(&collection("pizzas"), filter("name", EqualTo("pasta salad"))?)
+    ///     .query_one(&collection("pizzas"), filter("name", EqualTo("pasta salad")))
     ///     .await?;
     ///
     /// // We expect no results
     /// assert_eq!(pasta_salad_result, None);
     /// # Ok(())
     /// # }
-    pub async fn query_one<'de, T: Deserialize<'de>>(
+    pub async fn query_one<'de, 'a, T: Deserialize<'de>>(
         &mut self,
         collection: &CollectionReference,
-        filter: Filter,
+        filter: Filter<'a>,
     ) -> Result<Option<T>, FirebaseError> {
         let (parent, collection_name) = self.split_collection_parent_and_name(collection);
 
@@ -699,17 +699,22 @@ impl FirestoreClient {
         stream.try_next().await
     }
 
-    async fn query_internal<'de, T: Deserialize<'de>>(
+    async fn query_internal<'de, 'a, T: Deserialize<'de>>(
         &mut self,
-        options: ApiQueryOptions,
+        options: ApiQueryOptions<'a>,
     ) -> Result<FirebaseStream<T, FirebaseError>, FirebaseError> {
+        let filter = options
+            .filter
+            .map(|f| try_into_grpc_filter(f, &self.root_resource_path))
+            .transpose()?;
+
         let structured_query = StructuredQuery {
             select: None,
             from: vec![CollectionSelector {
                 collection_id: options.collection_name,
                 all_descendants: options.should_search_descendants,
             }],
-            r#where: options.filter.map(|f| f.into()),
+            r#where: filter,
             order_by: vec![],
             start_at: None,
             end_at: None,
@@ -895,7 +900,7 @@ impl FirestoreClient {
     /// }
     ///
     /// let mut landmarks: Vec<Landmark> = client
-    ///     .collection_group_query("landmarks", filter("type", EqualTo("museum"))?)
+    ///     .collection_group_query("landmarks", filter("type", EqualTo("museum")))
     ///     .await?
     ///     .try_collect()
     ///     .await?;
@@ -918,10 +923,10 @@ impl FirestoreClient {
     /// # Ok(())
     /// # }
     /// ```
-    pub async fn collection_group_query<'de, T: Deserialize<'de>>(
+    pub async fn collection_group_query<'de, 'a, T: Deserialize<'de>>(
         &mut self,
         collection_name: impl Into<String>,
-        filter: Filter,
+        filter: Filter<'a>,
     ) -> Result<FirebaseStream<T, FirebaseError>, FirebaseError> {
         self.query_internal(ApiQueryOptions {
             parent: self.root_resource_path.clone(),
@@ -1015,6 +1020,10 @@ impl FirestoreClient {
         let name = collection.name().to_string();
 
         (parent, name)
+    }
+
+    fn serializer(&self) -> DocumentSerializer {
+        DocumentSerializer::new(self.root_resource_path.clone())
     }
 }
 
