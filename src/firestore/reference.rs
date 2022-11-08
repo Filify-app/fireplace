@@ -63,6 +63,18 @@ impl DocumentReference {
     }
 }
 
+impl AsRef<Self> for DocumentReference {
+    fn as_ref(&self) -> &Self {
+        self
+    }
+}
+
+impl AsRef<Self> for CollectionReference {
+    fn as_ref(&self) -> &Self {
+        self
+    }
+}
+
 impl std::fmt::Display for CollectionReference {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match &self.0.parent {
