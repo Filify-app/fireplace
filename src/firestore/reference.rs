@@ -219,7 +219,7 @@ fn hashed_type_id<T: 'static>() -> String {
     let mut hasher = std::collections::hash_map::DefaultHasher::new();
     type_id.hash(&mut hasher);
     let hash = hasher.finish();
-    format!("{}", hash)
+    hash.to_string()
 }
 
 #[cfg(test)]
