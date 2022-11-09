@@ -1,4 +1,8 @@
-use std::{any::TypeId, sync::Arc};
+use std::{
+    any::TypeId,
+    hash::{Hash, Hasher},
+    sync::Arc,
+};
 
 use anyhow::Context;
 use once_cell::sync::OnceCell;
@@ -53,7 +57,7 @@ impl CollectionReference {
     }
 
     pub(crate) fn type_id() -> &'static str {
-        COLLECTION_REF_TYPE_ID.get_or_init(|| format!("{:?}", TypeId::of::<Self>()))
+        COLLECTION_REF_TYPE_ID.get_or_init(hashed_type_id::<Self>)
     }
 }
 
@@ -121,7 +125,7 @@ impl DocumentReference {
     }
 
     pub(crate) fn type_id() -> &'static str {
-        DOC_REF_TYPE_ID.get_or_init(|| format!("{:?}", TypeId::of::<Self>()))
+        DOC_REF_TYPE_ID.get_or_init(hashed_type_id::<Self>)
     }
 }
 
@@ -208,6 +212,14 @@ impl PartialEq for DocumentReference {
     fn eq(&self, other: &Self) -> bool {
         self.to_string() == other.to_string()
     }
+}
+
+fn hashed_type_id<T: 'static>() -> String {
+    let type_id = TypeId::of::<T>();
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    type_id.hash(&mut hasher);
+    let hash = hasher.finish();
+    format!("{}", hash)
 }
 
 #[cfg(test)]
