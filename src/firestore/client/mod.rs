@@ -5,11 +5,12 @@ use std::pin::Pin;
 use anyhow::{anyhow, Context};
 use firestore_grpc::tonic;
 use firestore_grpc::v1::firestore_client::FirestoreClient as GrpcFirestoreClient;
+use firestore_grpc::v1::precondition::ConditionType;
 use firestore_grpc::v1::run_query_request::QueryType;
 use firestore_grpc::v1::structured_query::CollectionSelector;
 use firestore_grpc::v1::{
-    CreateDocumentRequest, DeleteDocumentRequest, DocumentMask, RunQueryRequest, StructuredQuery,
-    UpdateDocumentRequest,
+    CreateDocumentRequest, DeleteDocumentRequest, DocumentMask, Precondition, RunQueryRequest,
+    StructuredQuery, UpdateDocumentRequest,
 };
 use firestore_grpc::{
     tonic::{
@@ -486,6 +487,83 @@ impl FirestoreClient {
         Ok(deserialized)
     }
 
+    /// Updates a document at the given document reference. Differs from
+    /// [`set_document`](Self::set_document), in that this function assumes
+    /// that the document already exists, and will return a
+    /// [`DocumentNotfound`](FirebaseError::DocumentNotfound) error
+    /// if it cannot be found.
+    ///
+    /// # Examples
+    /// ```
+    /// # use fireplace::{firestore::collection, error::FirebaseError};
+    /// # use serde::{Deserialize, Serialize};
+    /// #
+    /// # #[tokio::main]
+    /// # async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    /// # let mut client = fireplace::firestore::test_helpers::initialise().await.unwrap();
+    /// #
+    /// #[derive(Debug, Serialize, Deserialize, PartialEq)]
+    /// struct Person {
+    ///     name: String,
+    ///     age: u32,
+    /// }
+    ///
+    /// let doc_ref = collection("people").doc("jake");
+    /// let mut jake = Person {
+    ///     name: "Jake".to_string(),
+    ///     age: 30,
+    /// };
+    ///
+    /// // We set a document in the database
+    /// client.set_document(&doc_ref, &jake).await?;
+    ///
+    /// // Then we update the document
+    /// jake.age = 31;
+    /// client.update_document(&doc_ref, &jake).await?;
+    ///
+    /// // We see that the document has been updated in the database
+    /// assert_eq!(Some(jake), client.get_document(&doc_ref).await?);
+    ///
+    /// let doc_ref = collection("people").doc("mary");
+    /// let mary = Person {
+    ///     name: "Mary".to_string(),
+    ///     age: 25,
+    /// };
+    ///
+    /// // If we try to update a document that does not exist, we get an error
+    /// let result = client.update_document(&doc_ref, &mary).await;
+    /// assert!(matches!(
+    ///     result.unwrap_err(),
+    ///     FirebaseError::DocumentNotfound(_),
+    /// ));
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub async fn update_document<T: Serialize>(
+        &mut self,
+        doc_ref: &DocumentReference,
+        document: &T,
+    ) -> Result<(), FirebaseError> {
+        let name = self.get_name_with(doc_ref);
+        let doc = self.serializer().name(name).serialize(document)?;
+
+        let request = UpdateDocumentRequest {
+            document: Some(doc),
+            update_mask: None,
+            mask: Some(DocumentMask {
+                field_paths: vec![],
+            }),
+            current_document: document_exists_precondition(),
+        };
+
+        self.client
+            .update_document(request)
+            .await
+            .map_err(not_found_err())?;
+
+        Ok(())
+    }
+
     /// Deletes a document from the database. Whether the document exists or not
     /// makes no difference.
     ///
@@ -533,6 +611,67 @@ impl FirestoreClient {
             .delete_document(request)
             .await
             .context("Failed to delete document")?;
+
+        Ok(())
+    }
+
+    /// Deletes a document at the given document reference. Differs from
+    /// [delete_document](Self::delete_document), in that this function assumes
+    /// that the document already exists, and will return a
+    /// [`DocumentNotfound`](FirebaseError::DocumentNotfound) error
+    /// if it cannot be found.
+    ///
+    /// # Examples
+    /// ```
+    /// # use fireplace::{firestore::collection, error::FirebaseError};
+    /// # use serde::{Deserialize, Serialize};
+    /// #
+    /// # #[tokio::main]
+    /// # async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    /// # let mut client = fireplace::firestore::test_helpers::initialise().await.unwrap();
+    /// #[derive(Debug, Serialize, Deserialize, PartialEq)]
+    /// struct Person {
+    ///     name: String,
+    ///     age: u32,
+    /// }
+    ///
+    /// let doc_ref = collection("people").doc("jake");
+    /// let jake = Person {
+    ///     name: "Jake".to_string(),
+    ///     age: 30,
+    /// };
+    ///
+    /// // We set a document in the database
+    /// client.set_document(&doc_ref, &jake).await.unwrap();
+    ///
+    /// // Then we delete the document
+    /// client.delete_existing_document(&doc_ref).await?;
+    /// assert_eq!(None, client.get_document::<serde_json::Value>(&doc_ref).await?);
+    ///
+    /// // If we try to delete a document that does not exist, we get an error
+    /// let result = client.delete_existing_document(&doc_ref).await;
+    /// assert!(matches!(
+    ///     result.unwrap_err(),
+    ///     FirebaseError::DocumentNotfound(_),
+    /// ));
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub async fn delete_existing_document(
+        &mut self,
+        doc_ref: &DocumentReference,
+    ) -> Result<(), FirebaseError> {
+        let name = self.get_name_with(doc_ref);
+
+        let request = DeleteDocumentRequest {
+            name,
+            current_document: document_exists_precondition(),
+        };
+
+        self.client
+            .delete_document(request)
+            .await
+            .map_err(not_found_err())?;
 
         Ok(())
     }
@@ -1024,6 +1163,22 @@ impl FirestoreClient {
 
     fn serializer(&self) -> DocumentSerializer {
         DocumentSerializer::new(self.root_resource_path.clone())
+    }
+}
+
+fn document_exists_precondition() -> Option<Precondition> {
+    Some(Precondition {
+        condition_type: Some(ConditionType::Exists(true)),
+    })
+}
+
+fn not_found_err() -> fn(Status) -> FirebaseError {
+    |err| {
+        if err.code() == tonic::Code::NotFound {
+            FirebaseError::DocumentNotfound(err.message().to_string())
+        } else {
+            anyhow!(err).into()
+        }
     }
 }
 
