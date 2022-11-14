@@ -665,9 +665,7 @@ impl FirestoreClient {
 
         let request = DeleteDocumentRequest {
             name,
-            current_document: Some(Precondition {
-                condition_type: Some(ConditionType::Exists(true)),
-            }),
+            current_document: Self::document_exists_precondition(),
         };
 
         self.client
