@@ -487,8 +487,8 @@ impl FirestoreClient {
         Ok(deserialized)
     }
 
-    /// Updates a document at the given document reference. Opposite
-    /// [`set_document`](Self::set_document), this function assumes
+    /// Updates a document at the given document reference. Differs from
+    /// [`set_document`](Self::set_document), in that this function assumes
     /// that the document already exists, and will return a
     /// [`DocumentNotfound`](FirebaseError::DocumentNotfound) error
     /// if it cannot be found.
@@ -519,7 +519,7 @@ impl FirestoreClient {
     ///
     /// // Then we update the document
     /// jake.age = 31;
-    /// client.update_existing_document(&doc_ref, &jake).await?;
+    /// client.update_document(&doc_ref, &jake).await?;
     ///
     /// // We see that the document has been updated in the database
     /// assert_eq!(Some(jake), client.get_document(&doc_ref).await?);
@@ -531,7 +531,7 @@ impl FirestoreClient {
     /// };
     ///
     /// // If we try to update a document that does not exist, we get an error
-    /// let result = client.update_existing_document(&doc_ref, &mary).await;
+    /// let result = client.update_document(&doc_ref, &mary).await;
     /// assert!(matches!(
     ///     result.unwrap_err(),
     ///     FirebaseError::DocumentNotfound(_),
@@ -539,7 +539,7 @@ impl FirestoreClient {
     /// # Ok(())
     /// # }
     /// ```
-    pub async fn update_existing_document<T: Serialize>(
+    pub async fn update_document<T: Serialize>(
         &mut self,
         doc_ref: &DocumentReference,
         document: &T,
@@ -615,8 +615,8 @@ impl FirestoreClient {
         Ok(())
     }
 
-    /// Deletes a document at the given document reference. Opposite
-    /// [delete_document](Self::delete_document), this function assumes
+    /// Deletes a document at the given document reference. Differs from
+    /// [delete_document](Self::delete_document), in that this function assumes
     /// that the document already exists, and will return a
     /// [`DocumentNotfound`](FirebaseError::DocumentNotfound) error
     /// if it cannot be found.
