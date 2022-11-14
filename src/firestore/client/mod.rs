@@ -553,13 +553,13 @@ impl FirestoreClient {
             mask: Some(DocumentMask {
                 field_paths: vec![],
             }),
-            current_document: Self::document_exists_precondition(),
+            current_document: document_exists_precondition(),
         };
 
         self.client
             .update_document(request)
             .await
-            .map_err(Self::not_found_err())?;
+            .map_err(not_found_err())?;
 
         Ok(())
     }
@@ -665,13 +665,13 @@ impl FirestoreClient {
 
         let request = DeleteDocumentRequest {
             name,
-            current_document: Self::document_exists_precondition(),
+            current_document: document_exists_precondition(),
         };
 
         self.client
             .delete_document(request)
             .await
-            .map_err(Self::not_found_err())?;
+            .map_err(not_found_err())?;
 
         Ok(())
     }
@@ -1164,20 +1164,20 @@ impl FirestoreClient {
     fn serializer(&self) -> DocumentSerializer {
         DocumentSerializer::new(self.root_resource_path.clone())
     }
+}
 
-    fn document_exists_precondition() -> Option<Precondition> {
-        Some(Precondition {
-            condition_type: Some(ConditionType::Exists(true)),
-        })
-    }
+fn document_exists_precondition() -> Option<Precondition> {
+    Some(Precondition {
+        condition_type: Some(ConditionType::Exists(true)),
+    })
+}
 
-    fn not_found_err() -> fn(Status) -> FirebaseError {
-        |err| {
-            if err.code() == tonic::Code::NotFound {
-                FirebaseError::DocumentNotfound(err.message().to_string())
-            } else {
-                anyhow!(err).into()
-            }
+fn not_found_err() -> fn(Status) -> FirebaseError {
+    |err| {
+        if err.code() == tonic::Code::NotFound {
+            FirebaseError::DocumentNotfound(err.message().to_string())
+        } else {
+            anyhow!(err).into()
         }
     }
 }
