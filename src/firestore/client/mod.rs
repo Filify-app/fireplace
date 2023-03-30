@@ -23,7 +23,7 @@ use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 
 use crate::error::FirebaseError;
-use crate::firestore::serde::deserialize_firestore_document;
+use crate::firestore::serde::deserialize_firestore_document_fields;
 use crate::ServiceAccount;
 
 use super::query::{try_into_grpc_filter, ApiQueryOptions, Filter};
@@ -46,6 +46,19 @@ pub struct FirestoreClient {
     project_id: String,
     token_provider: FirestoreTokenProvider,
     root_resource_path: String,
+}
+
+#[derive(Eq, PartialEq, Debug)]
+pub struct FirestoreDocument<T> {
+    /// The resource name of the document, for example
+    /// `projects/{project_id}/databases/{database_id}/documents/{document_path}`.
+    pub id: String,
+    /// The deserialized document data.
+    pub data: T,
+    /// The time at which the document was created, in seconds of UTC time since Unix epoch.
+    pub create_time: Option<i64>,
+    /// The time at which the document was last updated, in seconds of UTC time since Unix epoch.
+    pub update_time: Option<i64>,
 }
 
 impl Clone for FirestoreClient {
@@ -187,7 +200,7 @@ impl FirestoreClient {
         match res {
             Ok(res) => {
                 let doc = res.into_inner();
-                let deserialized = deserialize_firestore_document::<T>(doc)?;
+                let deserialized = deserialize_firestore_document_fields::<T>(doc.fields)?;
                 Ok(Some(deserialized))
             }
             Err(err) if err.code() == tonic::Code::NotFound => Ok(None),
@@ -482,7 +495,7 @@ impl FirestoreClient {
             .map_err(|err| anyhow!(err))?;
 
         let doc = res.into_inner();
-        let deserialized = deserialize_firestore_document::<O>(doc)?;
+        let deserialized = deserialize_firestore_document_fields::<O>(doc.fields)?;
 
         Ok(deserialized)
     }
@@ -888,7 +901,7 @@ impl FirestoreClient {
                     .document
                     .context("No document in response - illegal state")?;
 
-                let deserialized = deserialize_firestore_document::<T>(doc)?;
+                let deserialized = deserialize_firestore_document_fields::<T>(doc.fields)?;
 
                 Ok(deserialized)
             });
