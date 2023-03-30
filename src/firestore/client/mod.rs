@@ -909,6 +909,67 @@ impl FirestoreClient {
         Ok(doc_stream.boxed())
     }
 
+    async fn query_internal_with_metadata<'de, 'a, T: Deserialize<'de>>(
+        &mut self,
+        options: ApiQueryOptions<'a>,
+    ) -> Result<FirebaseStream<FirestoreDocument<T>, FirebaseError>, FirebaseError> {
+        let filter = options
+            .filter
+            .map(|f| try_into_grpc_filter(f, &self.root_resource_path))
+            .transpose()?;
+
+        let structured_query = StructuredQuery {
+            select: None,
+            from: vec![CollectionSelector {
+                collection_id: options.collection_name,
+                all_descendants: options.should_search_descendants,
+            }],
+            r#where: filter,
+            order_by: vec![],
+            start_at: None,
+            end_at: None,
+            offset: 0,
+            limit: options.limit,
+        };
+
+        let request = RunQueryRequest {
+            parent: options.parent,
+            query_type: Some(QueryType::StructuredQuery(structured_query)),
+            consistency_selector: None,
+        };
+
+        let res = self
+            .client
+            .run_query(request)
+            .await
+            .context("Failed to run query")?;
+
+        let doc_stream = res
+            .into_inner()
+            // Some of the "results" coming from the gRPC stream don't represent
+            // search hits but rather information about query progress. We just
+            // ignore those items.
+            .filter(|res| match res {
+                Ok(inner) => future::ready(inner.document.is_some()),
+                Err(_) => future::ready(true),
+            })
+            .map(|res| {
+                let doc = res
+                    .map_err(|e| anyhow::anyhow!(e))?
+                    .document
+                    .context("No document in response - illegal state")?;
+
+                Ok(FirestoreDocument {
+                    id: doc.name,
+                    data: deserialize_firestore_document_fields::<T>(doc.fields)?,
+                    create_time: doc.create_time.map(|t| t.seconds),
+                    update_time: doc.update_time.map(|t| t.seconds),
+                })
+            });
+
+        Ok(doc_stream.boxed())
+    }
+
     /// Fetch all documents from any collection with the given name.
     ///
     /// # Examples
@@ -1081,6 +1142,94 @@ impl FirestoreClient {
         filter: Filter<'a>,
     ) -> Result<FirebaseStream<T, FirebaseError>, FirebaseError> {
         self.query_internal(ApiQueryOptions {
+            parent: self.root_resource_path.clone(),
+            collection_name: collection_name.into(),
+            filter: Some(filter),
+            limit: None,
+            should_search_descendants: true,
+        })
+        .await
+    }
+
+    /// Queries documents from any collection with the given name, similarly to
+    /// `collection_group_query`, but returns documents with metadata instead. The
+    /// metadata contains information about the document ID and when it was created
+    /// or updated. This requires you to create a collection group index in the
+    /// Firebase console, otherwise you will get an error telling you what to do.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # #[tokio::main]
+    /// # async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    /// # let mut client = fireplace::firestore::test_helpers::initialise().await?;
+    /// use fireplace::firestore::{
+    ///     collection,
+    ///     query::{filter, EqualTo},
+    /// };
+    /// use futures::TryStreamExt;
+    /// use serde::Deserialize;
+    /// use fireplace::firestore::client::FirestoreDocument;
+    ///
+    /// client
+    ///     .set_document(
+    ///         &collection("cities")
+    ///             .doc("SF")
+    ///             .collection("landmarks")
+    ///             .doc("golden-gate"),
+    ///         &serde_json::json!({ "name": "Golden Gate Bridge", "type": "bridge" }),
+    ///     )
+    ///     .await?;
+    /// client
+    ///     .set_document(
+    ///         &collection("cities")
+    ///             .doc("SF")
+    ///             .collection("landmarks")
+    ///             .doc("legion-honor"),
+    ///         &serde_json::json!({ "name": "Legion of Honor", "type": "museum" }),
+    ///     )
+    ///     .await?;
+    /// client
+    ///     .set_document(
+    ///         &collection("cities")
+    ///             .doc("TOK")
+    ///             .collection("landmarks")
+    ///             .doc("national-science-museum"),
+    ///         &serde_json::json!({ "name": "National Museum of Nature and Science", "type": "museum" }),
+    ///     )
+    ///     .await?;
+    ///
+    /// #[derive(Deserialize, Debug, PartialEq)]
+    /// struct Landmark {
+    ///     pub name: String,
+    ///     pub r#type: String,
+    /// }
+    ///
+    /// let mut landmarks: Vec<FirestoreDocument<Landmark>> = client
+    ///     .collection_group_query_with_metadata("landmarks", filter("type", EqualTo("museum")))
+    ///     .await?
+    ///     .try_collect()
+    ///     .await?;
+    ///
+    /// landmarks.sort_by(|a, b| a.data.name.cmp(&b.data.name));
+    ///
+    /// assert_eq!(landmarks[0].data.name, "Legion of Honor".to_string());
+    /// assert!(landmarks[0].id.ends_with("cities/SF/landmarks/legion-honor"));
+    /// assert_eq!(landmarks[0].create_time, landmarks[0].update_time);
+    ///
+    /// assert_eq!(landmarks[1].data.name, "National Museum of Nature and Science".to_string());
+    /// assert!(landmarks[1].id.ends_with("cities/TOK/landmarks/national-science-museum"));
+    /// assert_eq!(landmarks[1].create_time, landmarks[1].update_time);
+    ///
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub async fn collection_group_query_with_metadata<'de, 'a, T: Deserialize<'de>>(
+        &mut self,
+        collection_name: impl Into<String>,
+        filter: Filter<'a>,
+    ) -> Result<FirebaseStream<FirestoreDocument<T>, FirebaseError>, FirebaseError> {
+        self.query_internal_with_metadata(ApiQueryOptions {
             parent: self.root_resource_path.clone(),
             collection_name: collection_name.into(),
             filter: Some(filter),
