@@ -35,7 +35,7 @@ mod options;
 
 pub use options::FirestoreClientOptions;
 
-type FirebaseStream<T, E> = Pin<Box<dyn Stream<Item = Result<T, E>> + Send>>;
+type FirebaseStream<'i, T, E> = Pin<Box<dyn Stream<Item = Result<T, E>> + Send + 'i>>;
 
 type InterceptorFunction = Box<dyn FnMut(Request<()>) -> Result<Request<()>, Status> + Send>;
 
@@ -768,11 +768,11 @@ impl FirestoreClient {
     /// assert_eq!(pasta_salad_results, vec![]);
     /// # Ok(())
     /// # }
-    pub async fn query<'de, 'a, T: Deserialize<'de>>(
-        &mut self,
+    pub async fn query<'de, 'a, T: Deserialize<'de> + 'a>(
+        &'a mut self,
         collection: &CollectionReference,
         filter: Filter<'a>,
-    ) -> Result<FirebaseStream<T, FirebaseError>, FirebaseError> {
+    ) -> Result<FirebaseStream<'a, T, FirebaseError>, FirebaseError> {
         let (parent, collection_name) = self.split_collection_parent_and_name(collection);
 
         self.query_internal(ApiQueryOptions {
@@ -851,60 +851,14 @@ impl FirestoreClient {
         stream.try_next().await
     }
 
-    async fn query_internal<'de, 'a, T: Deserialize<'de>>(
-        &mut self,
+    async fn query_internal<'de, 'a, T: Deserialize<'de> + 'a>(
+        &'a mut self,
         options: ApiQueryOptions<'a>,
-    ) -> Result<FirebaseStream<T, FirebaseError>, FirebaseError> {
-        let filter = options
-            .filter
-            .map(|f| try_into_grpc_filter(f, &self.root_resource_path))
-            .transpose()?;
-
-        let structured_query = StructuredQuery {
-            select: None,
-            from: vec![CollectionSelector {
-                collection_id: options.collection_name,
-                all_descendants: options.should_search_descendants,
-            }],
-            r#where: filter,
-            order_by: vec![],
-            start_at: None,
-            end_at: None,
-            offset: 0,
-            limit: options.limit,
-        };
-
-        let request = RunQueryRequest {
-            parent: options.parent,
-            query_type: Some(QueryType::StructuredQuery(structured_query)),
-            consistency_selector: None,
-        };
-
-        let res = self
-            .client
-            .run_query(request)
-            .await
-            .context("Failed to run query")?;
-
-        let doc_stream = res
-            .into_inner()
-            // Some of the "results" coming from the gRPC stream don't represent
-            // search hits but rather information about query progress. We just
-            // ignore those items.
-            .filter(|res| match res {
-                Ok(inner) => future::ready(inner.document.is_some()),
-                Err(_) => future::ready(true),
-            })
-            .map(|res| {
-                let doc = res
-                    .map_err(|e| anyhow::anyhow!(e))?
-                    .document
-                    .context("No document in response - illegal state")?;
-
-                let deserialized = deserialize_firestore_document_fields::<T>(doc.fields)?;
-
-                Ok(deserialized)
-            });
+    ) -> Result<FirebaseStream<'a, T, FirebaseError>, FirebaseError> {
+        let doc_stream = self
+            .query_internal_with_metadata(options)
+            .await?
+            .map(|doc_res| doc_res.map(|doc| doc.data));
 
         Ok(doc_stream.boxed())
     }
@@ -1047,10 +1001,10 @@ impl FirestoreClient {
     /// # Ok(())
     /// # }
     /// ```
-    pub async fn collection_group<'de, T: Deserialize<'de>>(
-        &mut self,
+    pub async fn collection_group<'de, 'a, T: Deserialize<'de> + 'a>(
+        &'a mut self,
         collection_name: impl Into<String>,
-    ) -> Result<FirebaseStream<T, FirebaseError>, FirebaseError> {
+    ) -> Result<FirebaseStream<'a, T, FirebaseError>, FirebaseError> {
         self.query_internal(ApiQueryOptions {
             parent: self.root_resource_path.clone(),
             collection_name: collection_name.into(),
@@ -1136,11 +1090,11 @@ impl FirestoreClient {
     /// # Ok(())
     /// # }
     /// ```
-    pub async fn collection_group_query<'de, 'a, T: Deserialize<'de>>(
-        &mut self,
+    pub async fn collection_group_query<'de, 'a, T: Deserialize<'de> + 'a>(
+        &'a mut self,
         collection_name: impl Into<String>,
         filter: Filter<'a>,
-    ) -> Result<FirebaseStream<T, FirebaseError>, FirebaseError> {
+    ) -> Result<FirebaseStream<'a, T, FirebaseError>, FirebaseError> {
         self.query_internal(ApiQueryOptions {
             parent: self.root_resource_path.clone(),
             collection_name: collection_name.into(),
@@ -1290,10 +1244,10 @@ impl FirestoreClient {
     /// # Ok(())
     /// # }
     /// ```
-    pub async fn get_documents<T: DeserializeOwned + Send>(
-        &mut self,
+    pub async fn get_documents<'a, T: DeserializeOwned + Send + 'a>(
+        &'a mut self,
         collection_ref: &CollectionReference,
-    ) -> Result<FirebaseStream<T, FirebaseError>, FirebaseError> {
+    ) -> Result<FirebaseStream<'a, T, FirebaseError>, FirebaseError> {
         let (parent, collection_name) = self.split_collection_parent_and_name(collection_ref);
 
         self.query_internal(ApiQueryOptions {
