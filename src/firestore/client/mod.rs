@@ -772,7 +772,7 @@ impl FirestoreClient {
         &'a mut self,
         collection: &CollectionReference,
         filter: Filter<'a>,
-    ) -> Result<FirebaseStream<'a, T, FirebaseError>, FirebaseError> {
+    ) -> Result<FirebaseStream<T, FirebaseError>, FirebaseError> {
         let (parent, collection_name) = self.split_collection_parent_and_name(collection);
 
         self.query_internal(ApiQueryOptions {
@@ -1004,7 +1004,7 @@ impl FirestoreClient {
     pub async fn collection_group<'de, 'a, T: Deserialize<'de> + 'a>(
         &'a mut self,
         collection_name: impl Into<String>,
-    ) -> Result<FirebaseStream<'a, T, FirebaseError>, FirebaseError> {
+    ) -> Result<FirebaseStream<T, FirebaseError>, FirebaseError> {
         self.query_internal(ApiQueryOptions {
             parent: self.root_resource_path.clone(),
             collection_name: collection_name.into(),
@@ -1094,7 +1094,7 @@ impl FirestoreClient {
         &'a mut self,
         collection_name: impl Into<String>,
         filter: Filter<'a>,
-    ) -> Result<FirebaseStream<'a, T, FirebaseError>, FirebaseError> {
+    ) -> Result<FirebaseStream<T, FirebaseError>, FirebaseError> {
         self.query_internal(ApiQueryOptions {
             parent: self.root_resource_path.clone(),
             collection_name: collection_name.into(),
@@ -1247,7 +1247,7 @@ impl FirestoreClient {
     pub async fn get_documents<'a, T: DeserializeOwned + Send + 'a>(
         &'a mut self,
         collection_ref: &CollectionReference,
-    ) -> Result<FirebaseStream<'a, T, FirebaseError>, FirebaseError> {
+    ) -> Result<FirebaseStream<T, FirebaseError>, FirebaseError> {
         let (parent, collection_name) = self.split_collection_parent_and_name(collection_ref);
 
         self.query_internal(ApiQueryOptions {
