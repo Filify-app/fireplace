@@ -1,4 +1,4 @@
-use std::collections::hash_map;
+use std::collections::{hash_map, HashMap};
 use std::vec;
 
 use firestore_grpc::v1::value::ValueType;
@@ -8,13 +8,13 @@ use serde::Deserialize;
 
 use super::Error;
 
-pub(crate) fn deserialize_firestore_document<'de, T: Deserialize<'de>>(
-    doc: firestore_grpc::v1::Document,
+pub(crate) fn deserialize_firestore_document_fields<'de, T: Deserialize<'de>>(
+    fields: HashMap<String, firestore_grpc::v1::Value>,
 ) -> Result<T, Error> {
     // The Document struct is essentially just a map but with extra fields like
     // create/update timestamps. Deserializing it becomes easy if we just turn
     // it into an explicit map.
-    let value = ValueType::MapValue(firestore_grpc::v1::MapValue { fields: doc.fields });
+    let value = ValueType::MapValue(firestore_grpc::v1::MapValue { fields });
     let deserializer = FirestoreValueDeserializer { value };
     let result = T::deserialize(deserializer)?;
     Ok(result)
@@ -391,7 +391,7 @@ mod tests {
     use prost_types::Timestamp;
     use serde::Deserialize;
 
-    use super::deserialize_firestore_document;
+    use super::deserialize_firestore_document_fields;
 
     const RANDOM_TIMESTAMP: Option<Timestamp> = Some(Timestamp {
         seconds: 1663061252,
@@ -484,7 +484,7 @@ mod tests {
             right: Option<String>,
         }
 
-        let person: Person = deserialize_firestore_document(doc).unwrap();
+        let person: Person = deserialize_firestore_document_fields(doc.fields).unwrap();
 
         assert_eq!(
             person,
@@ -520,14 +520,14 @@ mod tests {
     #[test]
     fn deserialize_integer_field() {
         let doc = create_simple_document("age", ValueType::IntegerValue(20));
-        let result: serde_json::Value = deserialize_firestore_document(doc).unwrap();
+        let result: serde_json::Value = deserialize_firestore_document_fields(doc.fields).unwrap();
         assert_eq!(result, serde_json::json!({ "age": 20 }));
     }
 
     #[test]
     fn deserialize_double_field() {
         let doc = create_simple_document("score", ValueType::DoubleValue(32.5089));
-        let result: serde_json::Value = deserialize_firestore_document(doc).unwrap();
+        let result: serde_json::Value = deserialize_firestore_document_fields(doc.fields).unwrap();
         assert_eq!(result, serde_json::json!({ "score": 32.5089 }));
     }
 
@@ -535,21 +535,21 @@ mod tests {
     fn deserialize_string_field() {
         let doc =
             create_simple_document("topping", ValueType::StringValue("Pepperoni".to_string()));
-        let result: serde_json::Value = deserialize_firestore_document(doc).unwrap();
+        let result: serde_json::Value = deserialize_firestore_document_fields(doc.fields).unwrap();
         assert_eq!(result, serde_json::json!({ "topping": "Pepperoni" }));
     }
 
     #[test]
     fn deserialize_null_field() {
         let doc = create_simple_document("right_hand", ValueType::NullValue(1337));
-        let result: serde_json::Value = deserialize_firestore_document(doc).unwrap();
+        let result: serde_json::Value = deserialize_firestore_document_fields(doc.fields).unwrap();
         assert_eq!(result, serde_json::json!({ "right_hand": null }));
     }
 
     #[test]
     fn deserialize_boolean_field() {
         let doc = create_simple_document("is_too_old", ValueType::BooleanValue(false));
-        let result: serde_json::Value = deserialize_firestore_document(doc).unwrap();
+        let result: serde_json::Value = deserialize_firestore_document_fields(doc.fields).unwrap();
         assert_eq!(result, serde_json::json!({ "is_too_old": false }));
     }
 
@@ -562,7 +562,7 @@ mod tests {
             price: f64,
         }
 
-        let result: Pizza = deserialize_firestore_document(doc).unwrap();
+        let result: Pizza = deserialize_firestore_document_fields(doc.fields).unwrap();
         assert_eq!(result, Pizza { price: 32.0 });
     }
 
@@ -575,7 +575,7 @@ mod tests {
             price: i64,
         }
 
-        let result: Result<Pizza, super::Error> = deserialize_firestore_document(doc);
+        let result: Result<Pizza, super::Error> = deserialize_firestore_document_fields(doc.fields);
         assert!(result.is_err());
     }
 
@@ -593,7 +593,7 @@ mod tests {
             sale_pct: Option<f64>,
         }
 
-        let result: Pizza = deserialize_firestore_document(doc).unwrap();
+        let result: Pizza = deserialize_firestore_document_fields(doc.fields).unwrap();
         assert_eq!(result, Pizza { sale_pct: None });
     }
 
@@ -607,7 +607,7 @@ mod tests {
             }),
         );
 
-        let result: serde_json::Value = deserialize_firestore_document(doc).unwrap();
+        let result: serde_json::Value = deserialize_firestore_document_fields(doc.fields).unwrap();
         assert_eq!(result, serde_json::json!({ "timestamp": 1234567890 }));
     }
 
@@ -618,7 +618,7 @@ mod tests {
             ValueType::ReferenceValue("projects/pizzaproject/databases/(default)/documents/pizzas/hawaii/toppings/pineapple".to_string()),
         );
 
-        let result: serde_json::Value = deserialize_firestore_document(doc).unwrap();
+        let result: serde_json::Value = deserialize_firestore_document_fields(doc.fields).unwrap();
         assert_eq!(
             result,
             serde_json::json!({ "topping_reference": "pizzas/hawaii/toppings/pineapple" })
@@ -670,7 +670,7 @@ mod tests {
             pizza_type: PizzaType,
         }
 
-        let result: Pizza = deserialize_firestore_document(doc).unwrap();
+        let result: Pizza = deserialize_firestore_document_fields(doc.fields).unwrap();
         assert_eq!(result.pizza_type, PizzaType::Hawaii);
     }
 }

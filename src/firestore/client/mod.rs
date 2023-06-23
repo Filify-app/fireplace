@@ -23,7 +23,7 @@ use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 
 use crate::error::FirebaseError;
-use crate::firestore::serde::deserialize_firestore_document;
+use crate::firestore::serde::deserialize_firestore_document_fields;
 use crate::ServiceAccount;
 
 use super::query::{try_into_grpc_filter, ApiQueryOptions, Filter};
@@ -35,7 +35,7 @@ mod options;
 
 pub use options::FirestoreClientOptions;
 
-type FirebaseStream<T, E> = Pin<Box<dyn Stream<Item = Result<T, E>> + Send>>;
+type FirebaseStream<'i, T, E> = Pin<Box<dyn Stream<Item = Result<T, E>> + Send + 'i>>;
 
 type InterceptorFunction = Box<dyn FnMut(Request<()>) -> Result<Request<()>, Status> + Send>;
 
@@ -46,6 +46,19 @@ pub struct FirestoreClient {
     project_id: String,
     token_provider: FirestoreTokenProvider,
     root_resource_path: String,
+}
+
+#[derive(Eq, PartialEq, Debug)]
+pub struct FirestoreDocument<T> {
+    /// The resource name of the document, for example
+    /// `projects/{project_id}/databases/{database_id}/documents/{document_path}`.
+    pub id: String,
+    /// The deserialized document data.
+    pub data: T,
+    /// The time at which the document was created, in seconds of UTC time since Unix epoch.
+    pub create_time: Option<i64>,
+    /// The time at which the document was last updated, in seconds of UTC time since Unix epoch.
+    pub update_time: Option<i64>,
 }
 
 impl Clone for FirestoreClient {
@@ -187,7 +200,7 @@ impl FirestoreClient {
         match res {
             Ok(res) => {
                 let doc = res.into_inner();
-                let deserialized = deserialize_firestore_document::<T>(doc)?;
+                let deserialized = deserialize_firestore_document_fields::<T>(doc.fields)?;
                 Ok(Some(deserialized))
             }
             Err(err) if err.code() == tonic::Code::NotFound => Ok(None),
@@ -482,7 +495,7 @@ impl FirestoreClient {
             .map_err(|err| anyhow!(err))?;
 
         let doc = res.into_inner();
-        let deserialized = deserialize_firestore_document::<O>(doc)?;
+        let deserialized = deserialize_firestore_document_fields::<O>(doc.fields)?;
 
         Ok(deserialized)
     }
@@ -755,11 +768,11 @@ impl FirestoreClient {
     /// assert_eq!(pasta_salad_results, vec![]);
     /// # Ok(())
     /// # }
-    pub async fn query<'de, 'a, T: Deserialize<'de>>(
-        &mut self,
+    pub async fn query<'de, 'a, T: Deserialize<'de> + 'a>(
+        &'a mut self,
         collection: &CollectionReference,
         filter: Filter<'a>,
-    ) -> Result<FirebaseStream<T, FirebaseError>, FirebaseError> {
+    ) -> Result<FirebaseStream<'a, T, FirebaseError>, FirebaseError> {
         let (parent, collection_name) = self.split_collection_parent_and_name(collection);
 
         self.query_internal(ApiQueryOptions {
@@ -838,10 +851,22 @@ impl FirestoreClient {
         stream.try_next().await
     }
 
-    async fn query_internal<'de, 'a, T: Deserialize<'de>>(
+    async fn query_internal<'de, 'a, T: Deserialize<'de> + 'a>(
+        &'a mut self,
+        options: ApiQueryOptions<'a>,
+    ) -> Result<FirebaseStream<'a, T, FirebaseError>, FirebaseError> {
+        let doc_stream = self
+            .query_internal_with_metadata(options)
+            .await?
+            .map(|doc_res| doc_res.map(|doc| doc.data));
+
+        Ok(doc_stream.boxed())
+    }
+
+    async fn query_internal_with_metadata<'de, 'a, T: Deserialize<'de>>(
         &mut self,
         options: ApiQueryOptions<'a>,
-    ) -> Result<FirebaseStream<T, FirebaseError>, FirebaseError> {
+    ) -> Result<FirebaseStream<FirestoreDocument<T>, FirebaseError>, FirebaseError> {
         let filter = options
             .filter
             .map(|f| try_into_grpc_filter(f, &self.root_resource_path))
@@ -888,9 +913,12 @@ impl FirestoreClient {
                     .document
                     .context("No document in response - illegal state")?;
 
-                let deserialized = deserialize_firestore_document::<T>(doc)?;
-
-                Ok(deserialized)
+                Ok(FirestoreDocument {
+                    id: doc.name,
+                    data: deserialize_firestore_document_fields::<T>(doc.fields)?,
+                    create_time: doc.create_time.map(|t| t.seconds),
+                    update_time: doc.update_time.map(|t| t.seconds),
+                })
             });
 
         Ok(doc_stream.boxed())
@@ -973,10 +1001,10 @@ impl FirestoreClient {
     /// # Ok(())
     /// # }
     /// ```
-    pub async fn collection_group<'de, T: Deserialize<'de>>(
-        &mut self,
+    pub async fn collection_group<'de, 'a, T: Deserialize<'de> + 'a>(
+        &'a mut self,
         collection_name: impl Into<String>,
-    ) -> Result<FirebaseStream<T, FirebaseError>, FirebaseError> {
+    ) -> Result<FirebaseStream<'a, T, FirebaseError>, FirebaseError> {
         self.query_internal(ApiQueryOptions {
             parent: self.root_resource_path.clone(),
             collection_name: collection_name.into(),
@@ -1062,12 +1090,100 @@ impl FirestoreClient {
     /// # Ok(())
     /// # }
     /// ```
-    pub async fn collection_group_query<'de, 'a, T: Deserialize<'de>>(
+    pub async fn collection_group_query<'de, 'a, T: Deserialize<'de> + 'a>(
+        &'a mut self,
+        collection_name: impl Into<String>,
+        filter: Filter<'a>,
+    ) -> Result<FirebaseStream<'a, T, FirebaseError>, FirebaseError> {
+        self.query_internal(ApiQueryOptions {
+            parent: self.root_resource_path.clone(),
+            collection_name: collection_name.into(),
+            filter: Some(filter),
+            limit: None,
+            should_search_descendants: true,
+        })
+        .await
+    }
+
+    /// Queries documents from any collection with the given name, similarly to
+    /// `collection_group_query`, but returns documents with metadata instead. The
+    /// metadata contains information about the document ID and when it was created
+    /// or updated. This requires you to create a collection group index in the
+    /// Firebase console, otherwise you will get an error telling you what to do.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # #[tokio::main]
+    /// # async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    /// # let mut client = fireplace::firestore::test_helpers::initialise().await?;
+    /// use fireplace::firestore::{
+    ///     collection,
+    ///     query::{filter, EqualTo},
+    /// };
+    /// use futures::TryStreamExt;
+    /// use serde::Deserialize;
+    /// use fireplace::firestore::client::FirestoreDocument;
+    ///
+    /// client
+    ///     .set_document(
+    ///         &collection("cities")
+    ///             .doc("SF")
+    ///             .collection("landmarks")
+    ///             .doc("golden-gate"),
+    ///         &serde_json::json!({ "name": "Golden Gate Bridge", "type": "bridge" }),
+    ///     )
+    ///     .await?;
+    /// client
+    ///     .set_document(
+    ///         &collection("cities")
+    ///             .doc("SF")
+    ///             .collection("landmarks")
+    ///             .doc("legion-honor"),
+    ///         &serde_json::json!({ "name": "Legion of Honor", "type": "museum" }),
+    ///     )
+    ///     .await?;
+    /// client
+    ///     .set_document(
+    ///         &collection("cities")
+    ///             .doc("TOK")
+    ///             .collection("landmarks")
+    ///             .doc("national-science-museum"),
+    ///         &serde_json::json!({ "name": "National Museum of Nature and Science", "type": "museum" }),
+    ///     )
+    ///     .await?;
+    ///
+    /// #[derive(Deserialize, Debug, PartialEq)]
+    /// struct Landmark {
+    ///     pub name: String,
+    ///     pub r#type: String,
+    /// }
+    ///
+    /// let mut landmarks: Vec<FirestoreDocument<Landmark>> = client
+    ///     .collection_group_query_with_metadata("landmarks", filter("type", EqualTo("museum")))
+    ///     .await?
+    ///     .try_collect()
+    ///     .await?;
+    ///
+    /// landmarks.sort_by(|a, b| a.data.name.cmp(&b.data.name));
+    ///
+    /// assert_eq!(landmarks[0].data.name, "Legion of Honor".to_string());
+    /// assert!(landmarks[0].id.ends_with("cities/SF/landmarks/legion-honor"));
+    /// assert_eq!(landmarks[0].create_time, landmarks[0].update_time);
+    ///
+    /// assert_eq!(landmarks[1].data.name, "National Museum of Nature and Science".to_string());
+    /// assert!(landmarks[1].id.ends_with("cities/TOK/landmarks/national-science-museum"));
+    /// assert_eq!(landmarks[1].create_time, landmarks[1].update_time);
+    ///
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub async fn collection_group_query_with_metadata<'de, 'a, T: Deserialize<'de>>(
         &mut self,
         collection_name: impl Into<String>,
         filter: Filter<'a>,
-    ) -> Result<FirebaseStream<T, FirebaseError>, FirebaseError> {
-        self.query_internal(ApiQueryOptions {
+    ) -> Result<FirebaseStream<FirestoreDocument<T>, FirebaseError>, FirebaseError> {
+        self.query_internal_with_metadata(ApiQueryOptions {
             parent: self.root_resource_path.clone(),
             collection_name: collection_name.into(),
             filter: Some(filter),
@@ -1128,10 +1244,10 @@ impl FirestoreClient {
     /// # Ok(())
     /// # }
     /// ```
-    pub async fn get_documents<T: DeserializeOwned + Send>(
-        &mut self,
+    pub async fn get_documents<'a, T: DeserializeOwned + Send + 'a>(
+        &'a mut self,
         collection_ref: &CollectionReference,
-    ) -> Result<FirebaseStream<T, FirebaseError>, FirebaseError> {
+    ) -> Result<FirebaseStream<'a, T, FirebaseError>, FirebaseError> {
         let (parent, collection_name) = self.split_collection_parent_and_name(collection_ref);
 
         self.query_internal(ApiQueryOptions {
