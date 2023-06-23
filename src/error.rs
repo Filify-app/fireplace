@@ -14,10 +14,10 @@ pub enum FirebaseError {
     #[error("Failed to validate token: {0}")]
     ValidateTokenError(anyhow::Error),
 
-    #[error(transparent)]
+    #[error("serde: {0}")]
     FirestoreSerdeError(#[from] crate::firestore::serde::Error),
 
-    #[error(transparent)]
+    #[error("grpc: {0}")]
     GrpcError(#[from] tonic::transport::Error),
 
     #[error(transparent)]
