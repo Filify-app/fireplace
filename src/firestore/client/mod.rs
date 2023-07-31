@@ -7,10 +7,13 @@ use firestore_grpc::tonic;
 use firestore_grpc::v1::firestore_client::FirestoreClient as GrpcFirestoreClient;
 use firestore_grpc::v1::precondition::ConditionType;
 use firestore_grpc::v1::run_query_request::QueryType;
+use firestore_grpc::v1::structured_aggregation_query::aggregation;
 use firestore_grpc::v1::structured_query::CollectionSelector;
+use firestore_grpc::v1::value::ValueType;
 use firestore_grpc::v1::{
-    CreateDocumentRequest, DeleteDocumentRequest, DocumentMask, Precondition, RunQueryRequest,
-    StructuredQuery, UpdateDocumentRequest,
+    run_aggregation_query_request, structured_aggregation_query, CreateDocumentRequest,
+    DeleteDocumentRequest, DocumentMask, Precondition, RunAggregationQueryRequest, RunQueryRequest,
+    StructuredAggregationQuery, StructuredQuery, UpdateDocumentRequest,
 };
 use firestore_grpc::{
     tonic::{
@@ -867,27 +870,11 @@ impl FirestoreClient {
         &mut self,
         options: ApiQueryOptions<'a>,
     ) -> Result<FirebaseStream<FirestoreDocument<T>, FirebaseError>, FirebaseError> {
-        let filter = options
-            .filter
-            .map(|f| try_into_grpc_filter(f, &self.root_resource_path))
-            .transpose()?;
-
-        let structured_query = StructuredQuery {
-            select: None,
-            from: vec![CollectionSelector {
-                collection_id: options.collection_name,
-                all_descendants: options.should_search_descendants,
-            }],
-            r#where: filter,
-            order_by: vec![],
-            start_at: None,
-            end_at: None,
-            offset: 0,
-            limit: options.limit,
-        };
+        let parent = options.parent.clone();
+        let structured_query = self.structured_query_from_options(options)?;
 
         let request = RunQueryRequest {
-            parent: options.parent,
+            parent,
             query_type: Some(QueryType::StructuredQuery(structured_query)),
             consistency_selector: None,
         };
@@ -903,16 +890,9 @@ impl FirestoreClient {
             // Some of the "results" coming from the gRPC stream don't represent
             // search hits but rather information about query progress. We just
             // ignore those items.
-            .filter(|res| match res {
-                Ok(inner) => future::ready(inner.document.is_some()),
-                Err(_) => future::ready(true),
-            })
-            .map(|res| {
-                let doc = res
-                    .map_err(|e| anyhow::anyhow!(e))?
-                    .document
-                    .context("No document in response - illegal state")?;
-
+            .filter_map(|res| future::ready(res.map(|inner| inner.document).transpose()))
+            .map(|doc_res| {
+                let doc = doc_res.map_err(|e| anyhow!(e))?;
                 Ok(FirestoreDocument {
                     id: doc.name,
                     data: deserialize_firestore_document_fields::<T>(doc.fields)?,
@@ -1258,6 +1238,109 @@ impl FirestoreClient {
             should_search_descendants: false,
         })
         .await
+    }
+
+    pub async fn count<'de, 'a>(
+        &'a mut self,
+        collection_name: impl Into<String>,
+        filter: Filter<'a>,
+    ) -> Result<u64, FirebaseError> {
+        let options = ApiQueryOptions {
+            parent: self.root_resource_path.clone(),
+            collection_name: collection_name.into(),
+            filter: Some(filter),
+            limit: None,
+            should_search_descendants: true,
+        };
+
+        self.count_internal(options).await
+    }
+
+    async fn count_internal<'a>(
+        &'a mut self,
+        options: ApiQueryOptions<'a>,
+    ) -> Result<u64, FirebaseError> {
+        let parent = options.parent.clone();
+        let structured_query = self.structured_query_from_options(options)?;
+
+        let aggregation_request = RunAggregationQueryRequest {
+            parent,
+            query_type: Some(
+                run_aggregation_query_request::QueryType::StructuredAggregationQuery(
+                    StructuredAggregationQuery {
+                        query_type: Some(structured_aggregation_query::QueryType::StructuredQuery(
+                            structured_query,
+                        )),
+                        aggregations: vec![structured_aggregation_query::Aggregation {
+                            alias: "doc_count".to_string(),
+                            operator: Some(aggregation::Operator::Count(aggregation::Count {
+                                up_to: None,
+                            })),
+                        }],
+                    },
+                ),
+            ),
+            consistency_selector: None,
+        };
+
+        let res = self
+            .client
+            .run_aggregation_query(aggregation_request)
+            .await
+            .context("Failed to run count aggregation query")?;
+
+        let count = res
+            .into_inner()
+            .filter_map(|res| future::ready(res.map(|inner| inner.result).transpose()))
+            .map(|agg_res| -> Result<u64, FirebaseError> {
+                let agg = agg_res.map_err(|e| anyhow!(e))?;
+                let doc_count_value = agg
+                    .aggregate_fields
+                    .get("doc_count")
+                    .context("Failed to get count from response")?;
+
+                let doc_count = match doc_count_value.value_type {
+                    Some(ValueType::IntegerValue(doc_count)) if doc_count >= 0 => doc_count as u64,
+                    ref v => {
+                        return Err(FirebaseError::Other(anyhow::anyhow!(
+                            "Unexpected value type for count: {v:?}"
+                        )))
+                    }
+                };
+
+                Ok(doc_count)
+            })
+            .next()
+            .await
+            .context("No count returned from aggregation query")??;
+
+        Ok(count)
+    }
+
+    fn structured_query_from_options<'a>(
+        &self,
+        options: ApiQueryOptions<'a>,
+    ) -> Result<StructuredQuery, FirebaseError> {
+        let grpc_filter = options
+            .filter
+            .map(|f| try_into_grpc_filter(f, &self.root_resource_path))
+            .transpose()?;
+
+        let structured_query = StructuredQuery {
+            select: None,
+            from: vec![CollectionSelector {
+                collection_id: options.collection_name,
+                all_descendants: options.should_search_descendants,
+            }],
+            r#where: grpc_filter,
+            order_by: vec![],
+            start_at: None,
+            end_at: None,
+            offset: 0,
+            limit: options.limit,
+        };
+
+        Ok(structured_query)
     }
 
     fn get_name_with(&self, item: impl Display) -> String {
