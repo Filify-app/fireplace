@@ -1240,6 +1240,58 @@ impl FirestoreClient {
         .await
     }
 
+    /// Counts the number of documents that would be returned by the given query.
+    ///
+    /// The counting itself is done server-side by Firestore, so using this
+    /// function will be more efficient than executing the query and counting
+    /// how many documents were returned.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # #[tokio::main]
+    /// # async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    /// # let mut client = fireplace::firestore::test_helpers::initialise().await?;
+    /// use fireplace::firestore::{
+    ///     collection, collection_group,
+    ///     query::{filter, EqualTo},
+    /// };
+    ///
+    /// let landmarks = vec![
+    ///     (
+    ///         ("SF", "golden-gate"),
+    ///         serde_json::json!({ "name": "Golden Gate Bridge", "type": "bridge" }),
+    ///     ),
+    ///     (
+    ///         ("SF", "legion-honor"),
+    ///         serde_json::json!({ "name": "Legion of Honor", "type": "museum" }),
+    ///     ),
+    ///     (
+    ///         ("TOK", "national-science-museum"),
+    ///         serde_json::json!({ "name": "National Museum of Nature and Science", "type": "museum" }),
+    ///     ),
+    /// ];
+    ///
+    /// for ((city, landmark_id), landmark_data) in landmarks {
+    ///     client
+    ///         .set_document(
+    ///             &collection("cities")
+    ///                 .doc(city)
+    ///                 .collection("landmarks")
+    ///                 .doc(landmark_id),
+    ///             &landmark_data,
+    ///         )
+    ///         .await?;
+    /// }
+    ///
+    /// let number_of_museums = client
+    ///     .count(collection_group("landmarks").with_filter(filter("type", EqualTo("museum"))))
+    ///     .await?;
+    ///
+    /// assert_eq!(number_of_museums, 2);
+    /// # Ok(())
+    /// # }
+    /// ```
     pub async fn count<'de, 'a>(
         &'a mut self,
         query: impl FirestoreQuery<'a>,
