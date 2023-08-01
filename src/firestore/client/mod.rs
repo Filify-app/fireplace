@@ -29,7 +29,7 @@ use crate::error::FirebaseError;
 use crate::firestore::serde::deserialize_firestore_document_fields;
 use crate::ServiceAccount;
 
-use super::query::{try_into_grpc_filter, ApiQueryOptions, Filter};
+use super::query::{try_into_grpc_filter, ApiQueryOptions, Filter, FirestoreQuery};
 use super::reference::{CollectionReference, DocumentReference};
 use super::serde::DocumentSerializer;
 use super::token_provider::FirestoreTokenProvider;
@@ -1242,16 +1242,10 @@ impl FirestoreClient {
 
     pub async fn count<'de, 'a>(
         &'a mut self,
-        collection_name: impl Into<String>,
-        filter: Filter<'a>,
+        query: impl FirestoreQuery<'a>,
     ) -> Result<u64, FirebaseError> {
-        let options = ApiQueryOptions {
-            parent: self.root_resource_path.clone(),
-            collection_name: collection_name.into(),
-            filter: Some(filter),
-            limit: None,
-            should_search_descendants: true,
-        };
+        let parent = self.root_resource_path.clone();
+        let options = ApiQueryOptions::from_query(parent, query);
 
         self.count_internal(options).await
     }

@@ -222,6 +222,69 @@ pub(crate) struct ApiQueryOptions<'a> {
     pub should_search_descendants: bool,
 }
 
+pub trait FirestoreQuery<'a> {
+    fn filter(self) -> Option<Filter<'a>>;
+    fn collection_name(&self) -> &str;
+    fn should_search_descendants(&self) -> bool;
+    fn limit(&self) -> Option<i32>;
+}
+
+pub struct CollectionGroupQuery<'a> {
+    collection_name: String,
+    filter: Option<Filter<'a>>,
+}
+
+pub fn collection_group<'a>(collection_name: impl Into<String>) -> CollectionGroupQuery<'a> {
+    CollectionGroupQuery::new(collection_name)
+}
+
+impl<'a> CollectionGroupQuery<'a> {
+    pub fn new(collection_name: impl Into<String>) -> Self {
+        CollectionGroupQuery {
+            collection_name: collection_name.into(),
+            filter: None,
+        }
+    }
+
+    pub fn with_filter(mut self, filter: Filter<'a>) -> Self {
+        self.filter = Some(filter);
+        self
+    }
+}
+
+impl<'a> FirestoreQuery<'a> for CollectionGroupQuery<'a> {
+    fn filter(self) -> Option<Filter<'a>> {
+        self.filter
+    }
+
+    fn collection_name(&self) -> &str {
+        &self.collection_name
+    }
+
+    fn should_search_descendants(&self) -> bool {
+        true
+    }
+
+    fn limit(&self) -> Option<i32> {
+        None
+    }
+}
+
+impl<'a> ApiQueryOptions<'a> {
+    pub(crate) fn from_query<T>(parent: String, query: T) -> Self
+    where
+        T: FirestoreQuery<'a>,
+    {
+        Self {
+            parent,
+            collection_name: query.collection_name().to_string(),
+            limit: query.limit(),
+            should_search_descendants: query.should_search_descendants(),
+            filter: query.filter(),
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use firestore_grpc::v1::value::ValueType;
