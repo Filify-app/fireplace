@@ -1363,9 +1363,9 @@ impl FirestoreClient {
         Ok(count)
     }
 
-    fn structured_query_from_options<'a>(
+    fn structured_query_from_options(
         &self,
-        options: ApiQueryOptions<'a>,
+        options: ApiQueryOptions<'_>,
     ) -> Result<StructuredQuery, FirebaseError> {
         let grpc_filter = options
             .filter
