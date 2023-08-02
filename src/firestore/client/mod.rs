@@ -1292,7 +1292,7 @@ impl FirestoreClient {
     /// # Ok(())
     /// # }
     /// ```
-    pub async fn count<'de, 'a>(
+    pub async fn count<'a>(
         &'a mut self,
         query: impl FirestoreQuery<'a>,
     ) -> Result<u64, FirebaseError> {
