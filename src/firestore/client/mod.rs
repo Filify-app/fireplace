@@ -1289,6 +1289,23 @@ impl FirestoreClient {
     ///     .await?;
     ///
     /// assert_eq!(number_of_museums, 2);
+    ///
+    /// let number_of_landmarks_in_san_francisco = client
+    ///     .count(collection("cities").doc("SF").collection("landmarks"))
+    ///     .await?;
+    ///
+    /// assert_eq!(number_of_landmarks_in_san_francisco, 2);
+    ///
+    /// let number_of_museums_in_san_francisco = client
+    ///     .count(
+    ///         collection("cities")
+    ///             .doc("SF")
+    ///             .collection("landmarks")
+    ///             .with_filter(filter("type", EqualTo("museum"))),
+    ///     )
+    ///     .await?;
+    ///
+    /// assert_eq!(number_of_museums_in_san_francisco, 1);
     /// # Ok(())
     /// # }
     /// ```
@@ -1296,8 +1313,7 @@ impl FirestoreClient {
         &'a mut self,
         query: impl FirestoreQuery<'a>,
     ) -> Result<u64, FirebaseError> {
-        let parent = self.root_resource_path.clone();
-        let options = ApiQueryOptions::from_query(parent, query);
+        let options = ApiQueryOptions::from_query(self, query);
 
         self.count_internal(options).await
     }
@@ -1389,7 +1405,7 @@ impl FirestoreClient {
         Ok(structured_query)
     }
 
-    fn get_name_with(&self, item: impl Display) -> String {
+    pub(crate) fn get_name_with(&self, item: impl Display) -> String {
         format!("{}/{}", self.root_resource_path, item)
     }
 
@@ -1404,6 +1420,10 @@ impl FirestoreClient {
         let name = collection.name().to_string();
 
         (parent, name)
+    }
+
+    pub(crate) fn root_resource_path(&self) -> &str {
+        &self.root_resource_path
     }
 
     fn serializer(&self) -> DocumentSerializer {
