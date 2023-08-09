@@ -11,4 +11,5 @@ mod token_provider;
 /// Relevant rust-lang issue: <https://github.com/rust-lang/rust/issues/67295>
 pub mod test_helpers;
 
+pub use query::collection_group;
 pub use reference::collection;

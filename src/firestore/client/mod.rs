@@ -7,10 +7,13 @@ use firestore_grpc::tonic;
 use firestore_grpc::v1::firestore_client::FirestoreClient as GrpcFirestoreClient;
 use firestore_grpc::v1::precondition::ConditionType;
 use firestore_grpc::v1::run_query_request::QueryType;
+use firestore_grpc::v1::structured_aggregation_query::aggregation;
 use firestore_grpc::v1::structured_query::CollectionSelector;
+use firestore_grpc::v1::value::ValueType;
 use firestore_grpc::v1::{
-    CreateDocumentRequest, DeleteDocumentRequest, DocumentMask, Precondition, RunQueryRequest,
-    StructuredQuery, UpdateDocumentRequest,
+    run_aggregation_query_request, structured_aggregation_query, CreateDocumentRequest,
+    DeleteDocumentRequest, DocumentMask, Precondition, RunAggregationQueryRequest, RunQueryRequest,
+    StructuredAggregationQuery, StructuredQuery, UpdateDocumentRequest,
 };
 use firestore_grpc::{
     tonic::{
@@ -26,7 +29,7 @@ use crate::error::FirebaseError;
 use crate::firestore::serde::deserialize_firestore_document_fields;
 use crate::ServiceAccount;
 
-use super::query::{try_into_grpc_filter, ApiQueryOptions, Filter};
+use super::query::{try_into_grpc_filter, ApiQueryOptions, Filter, FirestoreQuery};
 use super::reference::{CollectionReference, DocumentReference};
 use super::serde::DocumentSerializer;
 use super::token_provider::FirestoreTokenProvider;
@@ -867,27 +870,11 @@ impl FirestoreClient {
         &mut self,
         options: ApiQueryOptions<'a>,
     ) -> Result<FirebaseStream<FirestoreDocument<T>, FirebaseError>, FirebaseError> {
-        let filter = options
-            .filter
-            .map(|f| try_into_grpc_filter(f, &self.root_resource_path))
-            .transpose()?;
-
-        let structured_query = StructuredQuery {
-            select: None,
-            from: vec![CollectionSelector {
-                collection_id: options.collection_name,
-                all_descendants: options.should_search_descendants,
-            }],
-            r#where: filter,
-            order_by: vec![],
-            start_at: None,
-            end_at: None,
-            offset: 0,
-            limit: options.limit,
-        };
+        let parent = options.parent.clone();
+        let structured_query = self.structured_query_from_options(options)?;
 
         let request = RunQueryRequest {
-            parent: options.parent,
+            parent,
             query_type: Some(QueryType::StructuredQuery(structured_query)),
             consistency_selector: None,
         };
@@ -903,16 +890,9 @@ impl FirestoreClient {
             // Some of the "results" coming from the gRPC stream don't represent
             // search hits but rather information about query progress. We just
             // ignore those items.
-            .filter(|res| match res {
-                Ok(inner) => future::ready(inner.document.is_some()),
-                Err(_) => future::ready(true),
-            })
-            .map(|res| {
-                let doc = res
-                    .map_err(|e| anyhow::anyhow!(e))?
-                    .document
-                    .context("No document in response - illegal state")?;
-
+            .filter_map(|res| future::ready(res.map(|inner| inner.document).transpose()))
+            .map(|doc_res| {
+                let doc = doc_res.map_err(|e| anyhow!(e))?;
                 Ok(FirestoreDocument {
                     id: doc.name,
                     data: deserialize_firestore_document_fields::<T>(doc.fields)?,
@@ -1260,7 +1240,172 @@ impl FirestoreClient {
         .await
     }
 
-    fn get_name_with(&self, item: impl Display) -> String {
+    /// Counts the number of documents that would be returned by the given query.
+    ///
+    /// The counting itself is done server-side by Firestore, so using this
+    /// function will be more efficient than executing the query and counting
+    /// how many documents were returned.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # #[tokio::main]
+    /// # async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    /// # let mut client = fireplace::firestore::test_helpers::initialise().await?;
+    /// use fireplace::firestore::{
+    ///     collection, collection_group,
+    ///     query::{filter, EqualTo},
+    /// };
+    ///
+    /// let landmarks = vec![
+    ///     (
+    ///         ("SF", "golden-gate"),
+    ///         serde_json::json!({ "name": "Golden Gate Bridge", "type": "bridge" }),
+    ///     ),
+    ///     (
+    ///         ("SF", "legion-honor"),
+    ///         serde_json::json!({ "name": "Legion of Honor", "type": "museum" }),
+    ///     ),
+    ///     (
+    ///         ("TOK", "national-science-museum"),
+    ///         serde_json::json!({ "name": "National Museum of Nature and Science", "type": "museum" }),
+    ///     ),
+    /// ];
+    ///
+    /// for ((city, landmark_id), landmark_data) in landmarks {
+    ///     client
+    ///         .set_document(
+    ///             &collection("cities")
+    ///                 .doc(city)
+    ///                 .collection("landmarks")
+    ///                 .doc(landmark_id),
+    ///             &landmark_data,
+    ///         )
+    ///         .await?;
+    /// }
+    ///
+    /// let number_of_museums = client
+    ///     .count(collection_group("landmarks").with_filter(filter("type", EqualTo("museum"))))
+    ///     .await?;
+    ///
+    /// assert_eq!(number_of_museums, 2);
+    ///
+    /// let number_of_landmarks_in_san_francisco = client
+    ///     .count(collection("cities").doc("SF").collection("landmarks"))
+    ///     .await?;
+    ///
+    /// assert_eq!(number_of_landmarks_in_san_francisco, 2);
+    ///
+    /// let number_of_museums_in_san_francisco = client
+    ///     .count(
+    ///         collection("cities")
+    ///             .doc("SF")
+    ///             .collection("landmarks")
+    ///             .with_filter(filter("type", EqualTo("museum"))),
+    ///     )
+    ///     .await?;
+    ///
+    /// assert_eq!(number_of_museums_in_san_francisco, 1);
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub async fn count<'a>(
+        &'a mut self,
+        query: impl FirestoreQuery<'a>,
+    ) -> Result<u64, FirebaseError> {
+        let options = ApiQueryOptions::from_query(self, query);
+
+        self.count_internal(options).await
+    }
+
+    async fn count_internal<'a>(
+        &'a mut self,
+        options: ApiQueryOptions<'a>,
+    ) -> Result<u64, FirebaseError> {
+        let parent = options.parent.clone();
+        let structured_query = self.structured_query_from_options(options)?;
+
+        let aggregation_request = RunAggregationQueryRequest {
+            parent,
+            query_type: Some(
+                run_aggregation_query_request::QueryType::StructuredAggregationQuery(
+                    StructuredAggregationQuery {
+                        query_type: Some(structured_aggregation_query::QueryType::StructuredQuery(
+                            structured_query,
+                        )),
+                        aggregations: vec![structured_aggregation_query::Aggregation {
+                            alias: "doc_count".to_string(),
+                            operator: Some(aggregation::Operator::Count(aggregation::Count {
+                                up_to: None,
+                            })),
+                        }],
+                    },
+                ),
+            ),
+            consistency_selector: None,
+        };
+
+        let res = self
+            .client
+            .run_aggregation_query(aggregation_request)
+            .await
+            .context("Failed to run count aggregation query")?;
+
+        let count = res
+            .into_inner()
+            .filter_map(|res| future::ready(res.map(|inner| inner.result).transpose()))
+            .map(|agg_res| -> Result<u64, FirebaseError> {
+                let agg = agg_res.map_err(|e| anyhow!(e))?;
+                let doc_count_value = agg
+                    .aggregate_fields
+                    .get("doc_count")
+                    .context("Failed to get count from response")?;
+
+                let doc_count = match doc_count_value.value_type {
+                    Some(ValueType::IntegerValue(doc_count)) if doc_count >= 0 => doc_count as u64,
+                    ref v => {
+                        return Err(FirebaseError::Other(anyhow::anyhow!(
+                            "Unexpected value type for count: {v:?}"
+                        )))
+                    }
+                };
+
+                Ok(doc_count)
+            })
+            .next()
+            .await
+            .context("No count returned from aggregation query")??;
+
+        Ok(count)
+    }
+
+    fn structured_query_from_options(
+        &self,
+        options: ApiQueryOptions<'_>,
+    ) -> Result<StructuredQuery, FirebaseError> {
+        let grpc_filter = options
+            .filter
+            .map(|f| try_into_grpc_filter(f, &self.root_resource_path))
+            .transpose()?;
+
+        let structured_query = StructuredQuery {
+            select: None,
+            from: vec![CollectionSelector {
+                collection_id: options.collection_name,
+                all_descendants: options.should_search_descendants,
+            }],
+            r#where: grpc_filter,
+            order_by: vec![],
+            start_at: None,
+            end_at: None,
+            offset: 0,
+            limit: options.limit,
+        };
+
+        Ok(structured_query)
+    }
+
+    pub(crate) fn get_name_with(&self, item: impl Display) -> String {
         format!("{}/{}", self.root_resource_path, item)
     }
 
@@ -1275,6 +1420,10 @@ impl FirestoreClient {
         let name = collection.name().to_string();
 
         (parent, name)
+    }
+
+    pub(crate) fn root_resource_path(&self) -> &str {
+        &self.root_resource_path
     }
 
     fn serializer(&self) -> DocumentSerializer {

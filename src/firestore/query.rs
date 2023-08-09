@@ -27,7 +27,9 @@ use serde::Serialize;
 
 use crate::error::FirebaseError;
 
-use super::serde::serialize_to_value_type;
+use super::{
+    client::FirestoreClient, reference::CollectionReference, serde::serialize_to_value_type,
+};
 
 /// Represents a Firestore query operator used to test a field's value against
 /// a given filter.
@@ -220,6 +222,142 @@ pub(crate) struct ApiQueryOptions<'a> {
     pub limit: Option<i32>,
     /// Whether to search descendant collections with the same name
     pub should_search_descendants: bool,
+}
+
+impl<'a> ApiQueryOptions<'a> {
+    pub(crate) fn from_query<T>(client: &FirestoreClient, query: T) -> Self
+    where
+        T: FirestoreQuery<'a>,
+    {
+        let parent_path = query
+            .parent_path()
+            .map(|p| client.get_name_with(p))
+            .unwrap_or_else(|| client.root_resource_path().to_string());
+
+        Self {
+            parent: parent_path,
+            collection_name: query.collection_name().to_string(),
+            limit: query.limit(),
+            should_search_descendants: query.should_search_descendants(),
+            filter: query.filter(),
+        }
+    }
+}
+
+pub trait FirestoreQuery<'a> {
+    fn filter(self) -> Option<Filter<'a>>;
+    fn collection_name(&self) -> &str;
+    fn parent_path(&self) -> Option<String>;
+    fn should_search_descendants(&self) -> bool;
+    fn limit(&self) -> Option<i32>;
+}
+
+pub struct CollectionGroupQuery<'a> {
+    collection_name: String,
+    filter: Option<Filter<'a>>,
+}
+
+pub fn collection_group<'a>(collection_name: impl Into<String>) -> CollectionGroupQuery<'a> {
+    CollectionGroupQuery::new(collection_name)
+}
+
+impl<'a> CollectionGroupQuery<'a> {
+    pub fn new(collection_name: impl Into<String>) -> Self {
+        CollectionGroupQuery {
+            collection_name: collection_name.into(),
+            filter: None,
+        }
+    }
+
+    pub fn with_filter(mut self, filter: Filter<'a>) -> Self {
+        self.filter = Some(filter);
+        self
+    }
+}
+
+impl<'a> FirestoreQuery<'a> for CollectionGroupQuery<'a> {
+    fn filter(self) -> Option<Filter<'a>> {
+        self.filter
+    }
+
+    fn collection_name(&self) -> &str {
+        &self.collection_name
+    }
+
+    fn parent_path(&self) -> Option<String> {
+        None
+    }
+
+    fn should_search_descendants(&self) -> bool {
+        true
+    }
+
+    fn limit(&self) -> Option<i32> {
+        None
+    }
+}
+
+impl<'a> FirestoreQuery<'a> for CollectionReference {
+    fn filter(self) -> Option<Filter<'a>> {
+        None
+    }
+
+    fn parent_path(&self) -> Option<String> {
+        self.parent().map(|p| p.to_string())
+    }
+
+    fn collection_name(&self) -> &str {
+        self.name()
+    }
+
+    fn should_search_descendants(&self) -> bool {
+        false
+    }
+
+    fn limit(&self) -> Option<i32> {
+        None
+    }
+}
+
+pub struct CollectionQuery<'a> {
+    collection: CollectionReference,
+    filter: Option<Filter<'a>>,
+}
+
+impl<'a> CollectionQuery<'a> {
+    pub fn new(collection: CollectionReference) -> Self {
+        CollectionQuery {
+            collection,
+            filter: None,
+        }
+    }
+
+    pub fn with_filter(mut self, filter: Filter<'a>) -> Self {
+        self.filter = Some(filter);
+        self
+    }
+}
+
+impl<'a> FirestoreQuery<'a> for CollectionQuery<'a> {
+    fn filter(self) -> Option<Filter<'a>> {
+        self.filter
+    }
+
+    fn parent_path(&self) -> Option<String> {
+        self.collection.parent_path()
+    }
+
+    fn collection_name(&self) -> &str {
+        self.collection.collection_name()
+    }
+
+    fn should_search_descendants(&self) -> bool {
+        self.collection.should_search_descendants()
+    }
+
+    fn limit(&self) -> Option<i32> {
+        self.collection.limit()
+    }
 }
 
 #[cfg(test)]

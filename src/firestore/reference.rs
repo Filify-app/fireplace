@@ -8,6 +8,8 @@ use anyhow::Context;
 use once_cell::sync::OnceCell;
 use serde::{ser::SerializeStruct, Deserialize, Deserializer, Serialize, Serializer};
 
+use super::query::{CollectionQuery, Filter};
+
 pub fn collection(name: impl Into<String>) -> CollectionReference {
     CollectionReference::new(name)
 }
@@ -58,6 +60,11 @@ impl CollectionReference {
 
     pub(crate) fn type_id() -> &'static str {
         COLLECTION_REF_TYPE_ID.get_or_init(hashed_type_id::<Self>)
+    }
+
+    /// Create a Firestore query with that filters documents from this collection.
+    pub fn with_filter(self, filter: Filter<'_>) -> CollectionQuery<'_> {
+        CollectionQuery::new(self).with_filter(filter)
     }
 }
 
