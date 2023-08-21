@@ -31,7 +31,7 @@ use crate::ServiceAccount;
 
 use super::query::{try_into_grpc_filter, ApiQueryOptions, Filter, FirestoreQuery};
 use super::reference::{CollectionReference, DocumentReference};
-use super::serde::DocumentSerializer;
+use super::serde::{strip_reference_prefix, DocumentSerializer};
 use super::token_provider::FirestoreTokenProvider;
 
 mod options;
@@ -72,6 +72,16 @@ impl Clone for FirestoreClient {
             &self.project_id,
             self.options.clone(),
         )
+    }
+}
+
+impl<T> FirestoreDocument<T> {
+    /// Obtain a document reference to this document. May fail if the resource
+    /// path is invalid.
+    pub fn document_reference(&self) -> Result<DocumentReference, FirebaseError> {
+        let stripped_of_resource = strip_reference_prefix(&self.id);
+        let doc_ref = DocumentReference::try_from(stripped_of_resource)?;
+        Ok(doc_ref)
     }
 }
 
