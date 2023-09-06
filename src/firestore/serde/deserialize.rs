@@ -279,7 +279,7 @@ impl<'de> de::Deserializer<'de> for FirestoreValueDeserializer {
     }
 }
 
-fn strip_reference_prefix(reference: &str) -> String {
+pub(crate) fn strip_reference_prefix(reference: &str) -> String {
     // Format: projects/{project_id}/databases/{database_id}/documents/{document_path}
     reference.split('/').skip(5).collect::<Vec<_>>().join("/")
 }
