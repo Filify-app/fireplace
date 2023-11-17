@@ -3,11 +3,11 @@
 
 /*
 - [x] < less than
-- [ ] <= less than or equal to
+- [x] <= less than or equal to
 - [x] == equal to
-- [ ] > greater than
-- [ ] >= greater than or equal to
-- [ ] != not equal to
+- [x] > greater than
+- [x] >= greater than or equal to
+- [x] != not equal to
 - [x] array-contains
 - [ ] array-contains-any
 - [ ] in
@@ -56,6 +56,30 @@ pub trait QueryOperator<T: Serialize> {
     fn get_operator_code(&self) -> FieldFilterOperator;
 }
 
+pub struct GreaterThan<T: Ord + Serialize>(pub T);
+
+impl<T: Ord + Serialize> QueryOperator<T> for GreaterThan<T> {
+    fn get_value(self) -> T {
+        self.0
+    }
+
+    fn get_operator_code(&self) -> FieldFilterOperator {
+        FieldFilterOperator::GreaterThan
+    }
+}
+
+pub struct GreaterThanOrEqual<T: Ord + Serialize>(pub T);
+
+impl<T: Ord + Serialize> QueryOperator<T> for GreaterThanOrEqual<T> {
+    fn get_value(self) -> T {
+        self.0
+    }
+
+    fn get_operator_code(&self) -> FieldFilterOperator {
+        FieldFilterOperator::GreaterThanOrEqual
+    }
+}
+
 pub struct LessThan<T: Ord + Serialize>(pub T);
 
 impl<T: Ord + Serialize> QueryOperator<T> for LessThan<T> {
@@ -68,6 +92,18 @@ impl<T: Ord + Serialize> QueryOperator<T> for LessThan<T> {
     }
 }
 
+pub struct LessThanOrEqual<T: Ord + Serialize>(pub T);
+
+impl<T: Ord + Serialize> QueryOperator<T> for LessThanOrEqual<T> {
+    fn get_value(self) -> T {
+        self.0
+    }
+
+    fn get_operator_code(&self) -> FieldFilterOperator {
+        FieldFilterOperator::LessThanOrEqual
+    }
+}
+
 pub struct EqualTo<T: PartialEq + Serialize>(pub T);
 
 impl<T: PartialEq + Serialize> QueryOperator<T> for EqualTo<T> {
@@ -77,6 +113,18 @@ impl<T: PartialEq + Serialize> QueryOperator<T> for EqualTo<T> {
 
     fn get_operator_code(&self) -> FieldFilterOperator {
         FieldFilterOperator::Equal
+    }
+}
+
+pub struct NotEqual<T: PartialEq + Serialize>(pub T);
+
+impl<T: PartialEq + Serialize> QueryOperator<T> for NotEqual<T> {
+    fn get_value(self) -> T {
+        self.0
+    }
+
+    fn get_operator_code(&self) -> FieldFilterOperator {
+        FieldFilterOperator::NotEqual
     }
 }
 
