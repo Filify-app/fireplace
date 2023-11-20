@@ -489,6 +489,17 @@ impl FirestoreClient {
         // it much easier to just do that.
         fields: &[&str],
     ) -> Result<O, FirebaseError> {
+        self.set_document_merge_internal(doc_ref, document, fields, None)
+            .await
+    }
+
+    async fn set_document_merge_internal<'de, I: Serialize, O: Deserialize<'de>>(
+        &mut self,
+        doc_ref: &DocumentReference,
+        document: &I,
+        fields: &[&str],
+        current_document_precondition: Option<Precondition>,
+    ) -> Result<O, FirebaseError> {
         let name = self.get_name_with(doc_ref);
         let doc = self.serializer().name(name).serialize(document)?;
 
@@ -498,14 +509,14 @@ impl FirestoreClient {
                 field_paths: fields.iter().map(|s| s.to_string()).collect(),
             }),
             mask: None,
-            current_document: None,
+            current_document: current_document_precondition,
         };
 
         let res = self
             .client
             .update_document(request)
             .await
-            .map_err(|err| anyhow!(err))?;
+            .map_err(not_found_err())?;
 
         let doc = res.into_inner();
         let deserialized = deserialize_firestore_document_fields::<O>(doc.fields)?;
@@ -588,6 +599,113 @@ impl FirestoreClient {
             .map_err(not_found_err())?;
 
         Ok(())
+    }
+
+    /// Similar to [`update_document`](Self::update_document) but only updates
+    /// the fields specified in the `fields` argument. Differs from
+    /// [`set_document_merge`](Self::set_document_merge) in that this function
+    /// assumes that the document already exists, and will return a
+    /// [`DocumentNotfound`](FirebaseError::DocumentNotfound) error if it does
+    /// not exist.
+    ///
+    /// # Examples
+    ///
+    /// Refer to the [`set_document_merge`](Self::set_document_merge) docs for
+    /// information about specifying fields.
+    ///
+    /// ```
+    /// # #[tokio::main]
+    /// # async fn main() {
+    /// use fireplace::error::FirebaseError;
+    /// use fireplace::firestore::collection;
+    /// use serde::{Deserialize, Serialize};
+    /// let mut client = fireplace::firestore::test_helpers::initialise()
+    ///     .await
+    ///     .unwrap();
+    ///
+    /// #[derive(Debug, Serialize, Deserialize, PartialEq)]
+    /// struct TestType {
+    ///     label: String,
+    ///     nested: NestedItem,
+    /// }
+    ///
+    /// #[derive(Debug, Serialize, Deserialize, PartialEq)]
+    /// #[serde(rename_all = "camelCase")]
+    /// struct NestedItem {
+    ///     field_a: String,
+    ///     field_b: String,
+    /// }
+    ///
+    /// // First, we set a document in the database
+    /// let doc_ref = collection("greetings").doc("some-doc-id-to-update-merge");
+    /// client
+    ///     .set_document(
+    ///         &doc_ref,
+    ///         &TestType {
+    ///             label: "Hello".to_string(),
+    ///             nested: NestedItem {
+    ///                 field_a: "A".to_string(),
+    ///                 field_b: "B".to_string(),
+    ///             },
+    ///         },
+    ///     )
+    ///     .await
+    ///     .unwrap();
+    ///
+    /// // Then we can update some fields of a document in the database. For
+    /// // example, we can specify a top-level field ("label") or a nested field
+    /// // ("nested.fieldA").
+    /// let updated_doc: TestType = client
+    ///     .update_document_merge(
+    ///         &doc_ref,
+    ///         &TestType {
+    ///             label: "World".to_string(),
+    ///             nested: NestedItem {
+    ///                 field_a: "C".to_string(),
+    ///                 field_b: "D".to_string(),
+    ///             },
+    ///         },
+    ///         &["label", "nested.fieldB"],
+    ///     )
+    ///     .await
+    ///     .unwrap();
+    ///
+    /// // Only the specified fields are updated. Despite `nested.field_a` having a
+    /// // new value in the update, the value in the database is not changed.
+    /// assert_eq!(
+    ///     updated_doc,
+    ///     TestType {
+    ///         label: "World".to_string(),
+    ///         nested: NestedItem {
+    ///             field_a: "A".to_string(), // Notice this field did not change
+    ///             field_b: "D".to_string(),
+    ///         },
+    ///     }
+    /// );
+    ///
+    /// // If we try to update a document that does not exist, we get an error
+    /// let result = client
+    ///     .update_document_merge::<_, TestType>(
+    ///         &collection("greetings").doc("some-non-existing-doc-to-update-merge"),
+    ///         &serde_json::json!({ "label": "I will not be written" }),
+    ///         &["label"],
+    ///     )
+    ///     .await;
+    ///
+    /// assert!(
+    ///     matches!(result, Err(FirebaseError::DocumentNotfound(_))),
+    ///     "Expected a DocumentNotfound error, got {result:?}",
+    /// );
+    /// # }
+    /// ```
+    pub async fn update_document_merge<'de, I: Serialize, O: Deserialize<'de>>(
+        &mut self,
+        doc_ref: &DocumentReference,
+        document: &I,
+        fields: &[&str],
+    ) -> Result<O, FirebaseError> {
+        self.set_document_merge_internal(doc_ref, document, fields, document_exists_precondition())
+            .await
     }
 
     /// Deletes a document from the database. Whether the document exists or not
