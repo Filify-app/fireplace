@@ -6,9 +6,7 @@ This is a home-made client for Firebase's Admin SDK that seeks to provide a user
 
 ## Docs
 
-```sh
-cargo doc --open
-```
+View the crate documentation on [docs.rs](https://docs.rs/fireplace).
 
 ## Dependencies
 
