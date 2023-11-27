@@ -3,7 +3,13 @@ name = "fireplace"
 version = "0.1.0"
 edition = "2021"
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+description = "A client for Firebase that seeks to provide a user-friendly interface to interact with Firestore, Firebase Auth, and similar."
+license = "MIT"
+keywords = ["firebase", "firestore", "firebase-auth"]
+categories = ["database", "authentication", "web-programming"]
+repository = "https://github.com/Filify-app/fireplace"
+homepage = "https://github.com/Filify-app/fireplace"
+readme = "README.md"
 
 [dependencies]
 anyhow = "1.0"
