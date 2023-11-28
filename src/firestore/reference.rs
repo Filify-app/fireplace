@@ -62,9 +62,19 @@ impl CollectionReference {
         COLLECTION_REF_TYPE_ID.get_or_init(hashed_type_id::<Self>)
     }
 
-    /// Create a Firestore query with that filters documents from this collection.
+    /// Create a Firestore query that filters documents from this collection.
     pub fn with_filter(self, filter: Filter<'_>) -> CollectionQuery<'_> {
         CollectionQuery::new(self).with_filter(filter)
+    }
+
+    /// Create a Firestore query that limits how many documents are returned.
+    pub fn with_limit<'a>(self, limit: u32) -> CollectionQuery<'a> {
+        CollectionQuery::new(self).with_limit(limit)
+    }
+
+    /// Create a Firestore query that specifies an offset for pagination.
+    pub fn with_offset<'a>(self, offset: u32) -> CollectionQuery<'a> {
+        CollectionQuery::new(self).with_offset(offset)
     }
 }
 
