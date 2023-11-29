@@ -181,6 +181,22 @@ impl<'a> Filter<'a> {
 
         new_filter
     }
+
+    pub fn combine(self, other: Self) -> Self {
+        let (mut filters, other) = match (self, other) {
+            (Self::Composite(filters), other) | (other, Self::Composite(filters)) => {
+                (filters, other)
+            }
+            (Self::Single(filter), other) => (vec![filter], other),
+        };
+
+        match other {
+            Self::Composite(other_filters) => filters.extend(other_filters),
+            Self::Single(other_filter) => filters.push(other_filter),
+        }
+
+        Self::Composite(filters)
+    }
 }
 
 fn create_field_filter<'a, T, Q>(field: String, query_op: Q) -> FieldFilter<'a>
