@@ -160,6 +160,10 @@ pub struct FieldFilter<'a> {
 }
 
 impl<'a> Filter<'a> {
+    pub fn empty() -> Self {
+        Self::Composite(vec![])
+    }
+
     pub fn and<T: Serialize + 'a + Send>(
         self,
         field: impl Into<String> + 'a,
