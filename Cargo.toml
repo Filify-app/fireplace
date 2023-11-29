@@ -3,23 +3,29 @@ name = "fireplace"
 version = "0.1.0"
 edition = "2021"
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+description = "A client for Firebase that seeks to provide a user-friendly interface to interact with Firestore, Firebase Auth, and similar."
+license = "MIT"
+keywords = ["firebase", "firestore", "firebase-auth"]
+categories = ["database", "authentication", "web-programming"]
+repository = "https://github.com/Filify-app/fireplace"
+homepage = "https://github.com/Filify-app/fireplace"
+readme = "README.md"
 
 [dependencies]
-anyhow = "1.0"
-firestore_grpc = "0.129"
-serde = { version = "1.0", features = ["derive"] }
-serde_json = "1.0"
-tokio = { version = "1.21", features = ["full"] }
-prost-types = "0.9"
-thiserror = "1.0"
-jsonwebtoken = "8.1"
-futures = "0.3"
-reqwest = { version = "0.11", features = ["json"] }
-tracing = "0.1"
-openssl = "0.10"
-once_cell = "1.16"
-erased-serde = "0.3"
+anyhow = "1.0.75"
+firestore_grpc = "0.191.0"
+serde = { version = "1.0.193", features = ["derive"] }
+serde_json = "1.0.108"
+tokio = { version = "1.34.0", features = ["full"] }
+prost-types = "0.9.0"
+thiserror = "1.0.50"
+jsonwebtoken = "9.1.0"
+futures = "0.3.29"
+reqwest = { version = "0.11.22", features = ["json"] }
+tracing = "0.1.40"
+openssl = "0.10.60"
+once_cell = "1.18.0"
+erased-serde = "0.3.31"
 
 [dev-dependencies]
-ulid = "1.0"
+ulid = "1.1.0"

@@ -1,14 +1,11 @@
 # Fireplace
 
+[![Crates.io page](https://img.shields.io/crates/v/fireplace.svg?style=flat-square)](https://crates.io/crates/fireplace)
+[![docs.rs docs](https://img.shields.io/badge/docs-latest-blue.svg?style=flat-square)](https://docs.rs/fireplace)
+
 *The bestest, best Firebase library for Rust because there are no other libraries.*
 
 This is a home-made client for Firebase's Admin SDK that seeks to provide a user friendly interface to interact with Firestore, Firebase Auth, and similar.
-
-## Docs
-
-```sh
-cargo doc --open
-```
 
 ## Dependencies
 
@@ -16,7 +13,7 @@ To verify ID tokens for Firebase Auth, OpenSSL is required. For installation, se
 
 ## Examples
 
-Check out the `examples` directory. Test-run the hello-world example with:
+Check out the `examples` directory or view the crate documentation on [docs.rs](https://docs.rs/fireplace), which includes many examples. Test-run the hello-world example with:
 
 ```
 cargo run --example hello
