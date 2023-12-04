@@ -11,7 +11,7 @@
 //!
 //! ## Initializing the client
 //!
-//! ```
+//! ```no_run
 //! # #[tokio::main]
 //! # async fn main() {
 //! use fireplace::{
