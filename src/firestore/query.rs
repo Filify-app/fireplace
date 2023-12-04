@@ -160,6 +160,10 @@ pub struct FieldFilter<'a> {
 }
 
 impl<'a> Filter<'a> {
+    pub fn empty() -> Self {
+        Self::Composite(vec![])
+    }
+
     pub fn and<T: Serialize + 'a + Send>(
         self,
         field: impl Into<String> + 'a,
@@ -176,6 +180,22 @@ impl<'a> Filter<'a> {
         };
 
         new_filter
+    }
+
+    pub fn combine(self, other: Self) -> Self {
+        let (mut filters, other) = match (self, other) {
+            (Self::Composite(filters), other) | (other, Self::Composite(filters)) => {
+                (filters, other)
+            }
+            (Self::Single(filter), other) => (vec![filter], other),
+        };
+
+        match other {
+            Self::Composite(other_filters) => filters.extend(other_filters),
+            Self::Single(other_filter) => filters.push(other_filter),
+        }
+
+        Self::Composite(filters)
     }
 }
 
@@ -478,5 +498,36 @@ mod tests {
     fn implements_send() {
         fn assert_send<T: Send>() {}
         assert_send::<super::Filter>();
+    }
+
+    #[test]
+    fn combine_combines_filters() {
+        let a = filter("age", LessThan(42));
+        let b = filter("name", EqualTo("Bob"));
+
+        let mut combined = a.combine(b);
+
+        fn extract_inner_filters<'a>(combined: &'a mut Filter) -> &'a Vec<FieldFilter<'a>> {
+            if let Filter::Composite(filters) = combined {
+                filters.sort_by(|a, b| a.field.cmp(&b.field));
+                filters
+            } else {
+                panic!("Expected combined filter to be a composite filter");
+            }
+        }
+
+        let filters = extract_inner_filters(&mut combined);
+        assert_eq!(filters.len(), 2);
+        assert_eq!(filters[0].field, "age");
+        assert_eq!(filters[1].field, "name");
+
+        let c = filter("rating", GreaterThan(3));
+        let mut combined_again = combined.combine(c);
+        let filters = extract_inner_filters(&mut combined_again);
+
+        assert_eq!(filters.len(), 3);
+        assert_eq!(filters[0].field, "age");
+        assert_eq!(filters[1].field, "name");
+        assert_eq!(filters[2].field, "rating");
     }
 }
