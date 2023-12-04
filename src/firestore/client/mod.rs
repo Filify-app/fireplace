@@ -213,7 +213,8 @@ impl FirestoreClient {
         match res {
             Ok(res) => {
                 let doc = res.into_inner();
-                let deserialized = deserialize_firestore_document_fields::<T>(doc.fields)?;
+                let deserialized = deserialize_firestore_document_fields::<T>(doc.fields)
+                    .map_err(|e| serde_err_with_doc(e, &doc.name))?;
                 Ok(Some(deserialized))
             }
             Err(err) if err.code() == tonic::Code::NotFound => Ok(None),
@@ -519,7 +520,8 @@ impl FirestoreClient {
             .map_err(not_found_err())?;
 
         let doc = res.into_inner();
-        let deserialized = deserialize_firestore_document_fields::<O>(doc.fields)?;
+        let deserialized = deserialize_firestore_document_fields::<O>(doc.fields)
+            .map_err(|e| serde_err_with_doc(e, &doc.name))?;
 
         Ok(deserialized)
     }
@@ -1022,8 +1024,9 @@ impl FirestoreClient {
             .map(|doc_res| {
                 let doc = doc_res.map_err(|e| anyhow!(e))?;
                 Ok(FirestoreDocument {
+                    data: deserialize_firestore_document_fields::<T>(doc.fields)
+                        .map_err(|e| serde_err_with_doc(e, &doc.name))?,
                     id: doc.name,
-                    data: deserialize_firestore_document_fields::<T>(doc.fields)?,
                     create_time: doc.create_time.map(|t| t.seconds),
                     update_time: doc.update_time.map(|t| t.seconds),
                 })
@@ -1556,6 +1559,13 @@ impl FirestoreClient {
 
     fn serializer(&self) -> DocumentSerializer {
         DocumentSerializer::new(self.root_resource_path.clone())
+    }
+}
+
+fn serde_err_with_doc(err: crate::firestore::serde::Error, doc: impl AsRef<str>) -> FirebaseError {
+    FirebaseError::FirestoreSerdeError {
+        source: err,
+        document: Some(strip_reference_prefix(doc.as_ref())),
     }
 }
 
