@@ -1377,7 +1377,7 @@ impl FirestoreClient {
         .await
     }
 
-    pub async fn execute_query<'de, 'a, T: Deserialize<'de> + 'a>(
+    pub async fn run_query<'de, 'a, T: Deserialize<'de> + 'a>(
         &'a mut self,
         query: impl FirestoreQuery<'a>,
     ) -> Result<FirebaseStream<T, FirebaseError>, FirebaseError> {
@@ -1385,7 +1385,7 @@ impl FirestoreClient {
         self.query_internal(options).await
     }
 
-    pub async fn execute_query_with_metadata<'de, 'a, T: Deserialize<'de> + 'a>(
+    pub async fn run_query_with_metadata<'de, 'a, T: Deserialize<'de> + 'a>(
         &'a mut self,
         query: impl FirestoreQuery<'a>,
     ) -> Result<FirebaseStream<FirestoreDocument<T>, FirebaseError>, FirebaseError> {

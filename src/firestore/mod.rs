@@ -115,7 +115,7 @@
 //! use futures::TryStreamExt;
 //!
 //! let query = collection("cities").doc("SF").collection("landmarks");
-//! let sf_landmarks: Vec<Landmark> = client.execute_query(query).await?.try_collect().await?;
+//! let sf_landmarks: Vec<Landmark> = client.run_query(query).await?.try_collect().await?;
 //!
 //! assert_eq!(
 //!     sf_landmarks,
@@ -155,7 +155,7 @@
 //!     .doc("SF")
 //!     .collection("landmarks")
 //!     .with_filter(filter("type", EqualTo("museum")));
-//! let sf_museums: Vec<Landmark> = client.execute_query(query).await?.try_collect().await?;
+//! let sf_museums: Vec<Landmark> = client.run_query(query).await?.try_collect().await?;
 //!
 //! assert_eq!(
 //!     sf_museums.into_iter().map(|m| m.name).collect::<Vec<_>>(),
@@ -181,7 +181,7 @@
 //! use fireplace::firestore::collection_group;
 //!
 //! let query = collection_group("landmarks").with_filter(filter("type", EqualTo("museum")));
-//! let museums: Vec<Landmark> = client.execute_query(query).await?.try_collect().await?;
+//! let museums: Vec<Landmark> = client.run_query(query).await?.try_collect().await?;
 //!
 //! assert_eq!(
 //!     museums.into_iter().map(|m| m.name).collect::<Vec<_>>(),
@@ -205,7 +205,7 @@
 //! # fireplace::firestore::test_helpers::setup_landmarks_example(&mut client).await?;
 //! let query = collection_group("landmarks").with_filter(filter("type", EqualTo("museum")));
 //! let museums_with_metadata: Vec<FirestoreDocument<Landmark>> = client
-//!     .execute_query_with_metadata(query)
+//!     .run_query_with_metadata(query)
 //!     .await?
 //!     .try_collect()
 //!     .await?;
@@ -261,10 +261,10 @@
 //! # let mut client = fireplace::firestore::test_helpers::initialise().await?;
 //! # fireplace::firestore::test_helpers::setup_landmarks_example(&mut client).await?;
 //! let query = collection_group("landmarks").with_limit(2);
-//! let page_one: Vec<Landmark> = client.execute_query(query).await?.try_collect().await?;
+//! let page_one: Vec<Landmark> = client.run_query(query).await?.try_collect().await?;
 //!
 //! let query = collection_group("landmarks").with_limit(2).with_offset(2);
-//! let page_two: Vec<Landmark> = client.execute_query(query).await?.try_collect().await?;
+//! let page_two: Vec<Landmark> = client.run_query(query).await?.try_collect().await?;
 //!
 //! assert_eq!(
 //!     page_one.into_iter().map(|m| m.name).collect::<Vec<_>>(),
