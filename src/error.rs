@@ -14,14 +14,29 @@ pub enum FirebaseError {
     #[error("Failed to validate token: {0}")]
     ValidateTokenError(anyhow::Error),
 
-    #[error("serde: {0}")]
-    FirestoreSerdeError(#[from] crate::firestore::serde::Error),
+    #[error(
+        "serde: {source}{}",
+        document.as_ref().map(|d| format!(" in document '{d}'")).unwrap_or_default())
+    ]
+    FirestoreSerdeError {
+        source: crate::firestore::serde::Error,
+        document: Option<String>,
+    },
 
     #[error("grpc: {0}")]
     GrpcError(#[from] tonic::transport::Error),
 
     #[error(transparent)]
     Other(#[from] anyhow::Error),
+}
+
+impl From<crate::firestore::serde::Error> for FirebaseError {
+    fn from(e: crate::firestore::serde::Error) -> Self {
+        FirebaseError::FirestoreSerdeError {
+            source: e,
+            document: None,
+        }
+    }
 }
 
 impl std::fmt::Debug for FirebaseError {
