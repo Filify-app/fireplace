@@ -913,6 +913,7 @@ impl FirestoreClient {
             collection_name,
             filter: Some(filter),
             limit: None,
+            offset: None,
             should_search_descendants: false,
         })
         .await
@@ -977,6 +978,7 @@ impl FirestoreClient {
                 collection_name,
                 filter: Some(filter),
                 limit: Some(1),
+                offset: None,
                 should_search_descendants: false,
             })
             .await?;
@@ -1121,6 +1123,7 @@ impl FirestoreClient {
             collection_name: collection_name.into(),
             filter: None,
             limit: None,
+            offset: None,
             should_search_descendants: true,
         })
         .await
@@ -1211,6 +1214,7 @@ impl FirestoreClient {
             collection_name: collection_name.into(),
             filter: Some(filter),
             limit: None,
+            offset: None,
             should_search_descendants: true,
         })
         .await
@@ -1299,6 +1303,7 @@ impl FirestoreClient {
             collection_name: collection_name.into(),
             filter: Some(filter),
             limit: None,
+            offset: None,
             should_search_descendants: true,
         })
         .await
@@ -1366,9 +1371,26 @@ impl FirestoreClient {
             collection_name,
             filter: None,
             limit: None,
+            offset: None,
             should_search_descendants: false,
         })
         .await
+    }
+
+    pub async fn run_query<'de, 'a, T: Deserialize<'de> + 'a>(
+        &'a mut self,
+        query: impl FirestoreQuery<'a>,
+    ) -> Result<FirebaseStream<T, FirebaseError>, FirebaseError> {
+        let options = ApiQueryOptions::from_query(self, query);
+        self.query_internal(options).await
+    }
+
+    pub async fn run_query_with_metadata<'de, 'a, T: Deserialize<'de> + 'a>(
+        &'a mut self,
+        query: impl FirestoreQuery<'a>,
+    ) -> Result<FirebaseStream<FirestoreDocument<T>, FirebaseError>, FirebaseError> {
+        let options = ApiQueryOptions::from_query(self, query);
+        self.query_internal_with_metadata(options).await
     }
 
     /// Counts the number of documents that would be returned by the given query.
@@ -1529,7 +1551,7 @@ impl FirestoreClient {
             order_by: vec![],
             start_at: None,
             end_at: None,
-            offset: 0,
+            offset: options.offset.unwrap_or(0),
             limit: options.limit,
         };
 
