@@ -1,6 +1,6 @@
 [package]
 name = "fireplace"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
 
 description = "A client for Firebase that seeks to provide a user-friendly interface to interact with Firestore, Firebase Auth, and similar."
