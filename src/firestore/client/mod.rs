@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::fmt::Display;
 use std::future;
 use std::pin::Pin;
@@ -11,9 +12,10 @@ use firestore_grpc::v1::structured_aggregation_query::aggregation;
 use firestore_grpc::v1::structured_query::CollectionSelector;
 use firestore_grpc::v1::value::ValueType;
 use firestore_grpc::v1::{
-    run_aggregation_query_request, structured_aggregation_query, CreateDocumentRequest,
-    DeleteDocumentRequest, DocumentMask, Precondition, RunAggregationQueryRequest, RunQueryRequest,
-    StructuredAggregationQuery, StructuredQuery, UpdateDocumentRequest,
+    batch_get_documents_response, run_aggregation_query_request, structured_aggregation_query,
+    BatchGetDocumentsRequest, CreateDocumentRequest, DeleteDocumentRequest, DocumentMask,
+    Precondition, RunAggregationQueryRequest, RunQueryRequest, StructuredAggregationQuery,
+    StructuredQuery, UpdateDocumentRequest,
 };
 use firestore_grpc::{
     tonic::{
@@ -48,6 +50,7 @@ pub struct FirestoreClient {
     grpc_channel: Channel,
     project_id: String,
     token_provider: FirestoreTokenProvider,
+    database_path: String,
     root_resource_path: String,
 }
 
@@ -140,14 +143,16 @@ impl FirestoreClient {
             create_auth_interceptor(token_provider.clone()),
         );
 
-        let resource_path = format!("projects/{}/databases/(default)/documents", project_id);
+        let database_path = format!("projects/{project_id}/databases/(default)");
+        let root_resource_path = format!("{database_path}/documents");
 
         Self {
             client: service,
             project_id: project_id.to_string(),
             token_provider,
             grpc_channel: channel,
-            root_resource_path: resource_path,
+            database_path,
+            root_resource_path,
             options,
         }
     }
@@ -1530,6 +1535,105 @@ impl FirestoreClient {
             .context("No count returned from aggregation query")??;
 
         Ok(count)
+    }
+
+    /// Fetches all documents from the given iterator of document references.
+    ///
+    /// Documents are not guaranteed to be returned in the same order as they
+    /// were given in the iterator. If you need that guarantee, use
+    /// [`batch_get_documents_ordered`](Self::batch_get_documents_ordered).
+    ///
+    /// The returned stream will contain `Ok(FirestoreDocument<T>)` for each
+    /// document that was found, and `Err(String)` for each document that was not
+    /// found, with the string being the path of the missing document.
+    pub async fn batch_get_documents<'de, 'a, T: Deserialize<'de>>(
+        &'a mut self,
+        documents: impl IntoIterator<Item = &'a DocumentReference>,
+    ) -> Result<FirebaseStream<Result<FirestoreDocument<T>, String>, FirebaseError>, FirebaseError>
+    {
+        let doc_refs = documents
+            .into_iter()
+            .map(|doc_ref| self.get_name_with(doc_ref))
+            .collect::<Vec<_>>();
+
+        let res = self
+            .client
+            .batch_get_documents(BatchGetDocumentsRequest {
+                database: self.database_path.clone(),
+                documents: doc_refs,
+                mask: None,
+                consistency_selector: None,
+            })
+            .await
+            .context("Failed to run batch get documents request")?;
+
+        let doc_stream = res
+            .into_inner()
+            // Some of the "results" coming from the gRPC stream don't represent
+            // search hits but rather information about "the transaction". We just
+            // ignore those items.
+            .filter_map(|res| future::ready(res.map(|inner| inner.result).transpose()))
+            .map(|batch_get_res| {
+                let doc = match batch_get_res.map_err(|e| anyhow!(e))? {
+                    batch_get_documents_response::Result::Found(document) => document,
+                    batch_get_documents_response::Result::Missing(doc_path) => {
+                        return Ok(Err(doc_path))
+                    }
+                };
+
+                let deserialised = FirestoreDocument {
+                    data: deserialize_firestore_document_fields::<T>(doc.fields)
+                        .map_err(|e| serde_err_with_doc(e, &doc.name))?,
+                    id: doc.name,
+                    create_time: doc.create_time.map(|t| t.seconds),
+                    update_time: doc.update_time.map(|t| t.seconds),
+                };
+
+                Ok(Ok(deserialised))
+            });
+
+        Ok(doc_stream.boxed())
+    }
+
+    /// Fetches all documents from the given slice of document references.
+    /// Just like [`batch_get_documents`](Self::batch_get_documents), but returns
+    /// the documents in the same order as they were given.
+    ///
+    /// This has the downside of not being able to return a stream since the
+    /// Firestore API does not support ordering the results. Instead, this method
+    /// will fetch all the specified documents and return them in a `Vec` of
+    /// `Option<T>`, where `None` indicates that the document at that index could
+    /// not be found.
+    pub async fn batch_get_documents_ordered<'de, 'a, T: Deserialize<'de>>(
+        &'a mut self,
+        documents: &[DocumentReference],
+    ) -> Result<Vec<Option<T>>, FirebaseError> {
+        let indices = documents
+            .iter()
+            .enumerate()
+            .map(|(i, doc_ref)| (self.get_name_with(doc_ref), i))
+            .collect::<HashMap<_, _>>();
+
+        let mut doc_stream = self.batch_get_documents(documents).await?;
+
+        // Cannot use vec![None; documents.len()] because it would require T: Clone
+        let mut results = Vec::new();
+        results.resize_with(documents.len(), || None);
+
+        while let Some(result) = doc_stream.try_next().await? {
+            let doc = match result {
+                Ok(doc) => doc,
+                Err(_) => continue,
+            };
+
+            let index = indices.get(&doc.id).with_context(|| {
+                format!("Firestore returned an unexpected document: {}", doc.id)
+            })?;
+
+            results[*index] = Some(doc.data);
+        }
+
+        Ok(results)
     }
 
     fn structured_query_from_options(
