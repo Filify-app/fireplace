@@ -376,7 +376,10 @@ impl FirebaseAuthClient {
         Ok(res_body.uid)
     }
 
-    /// Updates a user in Firebase Auth.
+    /// Updates a user's attributes in Firebase Auth, such as email or display name.
+    ///
+    /// This function allows you to update specific fields of a user. Passing `None` for a field
+    /// will remove it. Only the provided fields will be modified; others remain unchanged.
     ///
     /// # Examples
     ///
