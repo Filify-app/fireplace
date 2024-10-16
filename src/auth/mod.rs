@@ -428,7 +428,7 @@ impl FirebaseAuthClient {
         let res = self
             .auth_post(self.url("/accounts:update"))
             .await?
-            .body(body.to_string())
+            .body(body)
             .send()
             .await
             .context("Failed to send update user request")?;
