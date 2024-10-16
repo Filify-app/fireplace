@@ -9,6 +9,7 @@ pub(crate) struct AuthApiErrorResponse {
 }
 
 #[derive(Debug, Deserialize)]
+#[allow(unused)]
 pub struct AuthApiErrorInfo {
     pub message: String,
     pub errors: Vec<SpecificAuthApiErrorInfo>,
@@ -16,6 +17,7 @@ pub struct AuthApiErrorInfo {
 }
 
 #[derive(Debug, Deserialize)]
+#[allow(unused)]
 pub struct SpecificAuthApiErrorInfo {
     pub domain: String,
     pub message: String,
