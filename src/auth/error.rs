@@ -28,6 +28,7 @@ impl From<AuthApiErrorResponse> for FirebaseError {
     fn from(err: AuthApiErrorResponse) -> Self {
         match err.error.message.as_ref() {
             "EMAIL_EXISTS" => FirebaseError::EmailAlreadyExists,
+            "USER_NOT_FOUND" => FirebaseError::UserNotFound,
             _ => anyhow!("{:?}", err).into(),
         }
     }
