@@ -402,13 +402,13 @@ impl FirebaseAuthClient {
     /// let new_email = format!("caesar@deceased{}.it", Ulid::new());
     ///
     /// // Pass `None` to delete a field
-    /// let new_display_name = None;
+    /// let new_display_name: Option<String> = None;
     ///
     /// let res = auth_client
     ///     .update_user(
     ///         &user_id,
     ///         UpdateUserValues::new()
-    ///             .email(new_email.clone())
+    ///             .email(&new_email)
     ///             .display_name(new_display_name),
     ///     )
     ///     .await?;

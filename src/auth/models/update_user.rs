@@ -15,20 +15,20 @@ impl UpdateUserValues {
     }
 
     /// Set the display name of the user. If `None` is passed, the display name will be removed.
-    pub fn display_name(mut self, display_name: Option<String>) -> Self {
-        self.display_name = Some(display_name);
+    pub fn display_name(mut self, display_name: Option<impl Into<String>>) -> Self {
+        self.display_name = Some(display_name.map(Into::into));
         self
     }
 
     /// Update the user's email.
-    pub fn email(mut self, email: String) -> Self {
-        self.email = Some(email);
+    pub fn email(mut self, email: impl Into<String>) -> Self {
+        self.email = Some(email.into());
         self
     }
 
     /// Update the user's password.
-    pub fn password(mut self, password: String) -> Self {
-        self.password = Some(password);
+    pub fn password(mut self, password: impl Into<String>) -> Self {
+        self.password = Some(password.into());
         self
     }
 }
