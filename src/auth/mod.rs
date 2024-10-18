@@ -2,7 +2,14 @@ use anyhow::Context;
 use reqwest::Response;
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 
-use crate::{auth::error::AuthApiErrorResponse, error::FirebaseError, ServiceAccount};
+use crate::{
+    auth::{
+        error::AuthApiErrorResponse,
+        models::{UpdateUserBody, UpdateUserValues},
+    },
+    error::FirebaseError,
+    ServiceAccount,
+};
 
 use self::{
     credential::{ApiAuthTokenManager, UserTokenManager},
@@ -367,6 +374,85 @@ impl FirebaseAuthClient {
         tracing::info!("Created user with id '{}'", &res_body.uid);
 
         Ok(res_body.uid)
+    }
+
+    /// Updates a user's attributes in Firebase Auth, such as email or display name.
+    ///
+    /// This function allows you to update specific fields of a user. Passing `None` for a field
+    /// will remove it. Only the provided fields will be modified; others remain unchanged.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # #[tokio::main]
+    /// # async fn main() -> Result<(), fireplace::error::FirebaseError> {
+    /// # let auth_client = fireplace::auth::test_helpers::initialise()?;
+    /// use fireplace::auth::models::{NewUser, UpdateUserValues};
+    /// use ulid::Ulid;
+    ///
+    /// let user_id = auth_client
+    ///     .create_user(NewUser {
+    ///         display_name: Some("Julius Caesar".to_string()),
+    ///         email: format!("caesar@rome{}.it", Ulid::new()),
+    ///         password: "venividivici".to_string(),
+    ///     })
+    ///     .await?;
+    ///
+    /// // Give a new value for the email
+    /// let new_email = format!("caesar@deceased{}.it", Ulid::new());
+    ///
+    /// // Pass `None` to delete a field
+    /// let new_display_name: Option<String> = None;
+    ///
+    /// let res = auth_client
+    ///     .update_user(
+    ///         &user_id,
+    ///         UpdateUserValues::new()
+    ///             .email(&new_email)
+    ///             .display_name(new_display_name),
+    ///     )
+    ///     .await?;
+    ///
+    /// assert_eq!(res.email, Some(new_email.to_lowercase()));
+    /// assert_eq!(res.display_name, None);
+    /// # Ok(())
+    /// # }
+    /// ```
+    #[tracing::instrument(name = "Update user", skip_all, fields(user_id = %user_id.as_ref()))]
+    pub async fn update_user(
+        &self,
+        user_id: impl AsRef<str>,
+        updated_values: UpdateUserValues,
+    ) -> Result<User, FirebaseError> {
+        let body_values = UpdateUserBody::from_values(user_id.as_ref(), updated_values);
+        let body =
+            serde_json::to_string(&body_values).context("Failed to serialize updated values")?;
+
+        let res = self
+            .auth_post(self.url("/accounts:update"))
+            .await?
+            .body(body)
+            .send()
+            .await
+            .context("Failed to send update user request")?;
+
+        if !res.status().is_success() {
+            let err = res
+                .json::<AuthApiErrorResponse>()
+                .await
+                .context("Failed to read error response JSON")?
+                .into();
+
+            tracing::error!("Failed to update user: {err}");
+
+            return Err(err);
+        }
+
+        let res_body: User = res.json().await.context("Failed to read response JSON")?;
+
+        tracing::info!("Updated user with id '{}'", &res_body.uid);
+
+        Ok(res_body)
     }
 
     /// Signs into Firebase with a custom generated token, which you can get

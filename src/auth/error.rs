@@ -9,6 +9,7 @@ pub(crate) struct AuthApiErrorResponse {
 }
 
 #[derive(Debug, Deserialize)]
+#[allow(unused)]
 pub struct AuthApiErrorInfo {
     pub message: String,
     pub errors: Vec<SpecificAuthApiErrorInfo>,
@@ -16,6 +17,7 @@ pub struct AuthApiErrorInfo {
 }
 
 #[derive(Debug, Deserialize)]
+#[allow(unused)]
 pub struct SpecificAuthApiErrorInfo {
     pub domain: String,
     pub message: String,
@@ -26,6 +28,7 @@ impl From<AuthApiErrorResponse> for FirebaseError {
     fn from(err: AuthApiErrorResponse) -> Self {
         match err.error.message.as_ref() {
             "EMAIL_EXISTS" => FirebaseError::EmailAlreadyExists,
+            "USER_NOT_FOUND" => FirebaseError::UserNotFound,
             _ => anyhow!("{:?}", err).into(),
         }
     }
