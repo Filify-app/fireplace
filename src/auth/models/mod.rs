@@ -13,6 +13,13 @@ pub(crate) struct GetAccountInfoResponse {
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub(crate) struct BatchGetResponse {
+    pub users: Option<Vec<User>>,
+    pub next_page_token: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct User {
     #[serde(rename = "localId")]
     pub uid: String,

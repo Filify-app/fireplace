@@ -5,7 +5,7 @@ use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use crate::{
     auth::{
         error::AuthApiErrorResponse,
-        models::{UpdateUserBody, UpdateUserValues},
+        models::{BatchGetResponse, UpdateUserBody, UpdateUserValues},
     },
     error::FirebaseError,
     ServiceAccount,
@@ -26,6 +26,7 @@ pub struct FirebaseAuthClient {
     api_url: String,
     user_token_manager: UserTokenManager,
     api_auth_token_manager: ApiAuthTokenManager,
+    project_id: String,
 }
 
 impl FirebaseAuthClient {
@@ -36,6 +37,7 @@ impl FirebaseAuthClient {
             .context("Failed to create HTTP client")?;
 
         let credential_manager = ApiAuthTokenManager::new(service_account.clone());
+        let project_id = service_account.project_id.clone();
         let token_handler = UserTokenManager::new(service_account, client.clone());
 
         Ok(Self {
@@ -43,11 +45,34 @@ impl FirebaseAuthClient {
             client,
             api_url: "https://identitytoolkit.googleapis.com/v1".to_string(),
             api_auth_token_manager: credential_manager,
+            project_id,
         })
     }
 
     fn url(&self, path: impl AsRef<str>) -> String {
         format!("{}{}", self.api_url, path.as_ref())
+    }
+
+    fn project_url(&self, path: impl AsRef<str>) -> String {
+        format!(
+            "{}/projects/{}{}",
+            self.api_url,
+            &self.project_id,
+            path.as_ref()
+        )
+    }
+
+    async fn get_access_token(&self) -> Result<String, FirebaseError> {
+        let access_token = self
+            .api_auth_token_manager
+            .get_access_token()
+            .await
+            .map_err(|e| {
+                tracing::error!("Failed to get access token: {e}");
+                e
+            })?;
+
+        Ok(access_token)
     }
 
     /// Creates a new `POST` request builder with the `Authorization` header set
@@ -56,18 +81,27 @@ impl FirebaseAuthClient {
         &self,
         url: impl AsRef<str>,
     ) -> Result<reqwest::RequestBuilder, FirebaseError> {
-        let access_token = self
-            .api_auth_token_manager
-            .get_access_token()
-            .await
-            .map_err(|e| {
-                tracing::error!("Failed to get access token: {}", e);
-                e
-            })?;
+        let access_token = self.get_access_token().await?;
 
         let builder = self
             .client
             .post(url.as_ref())
+            .header("Authorization", format!("Bearer {access_token}"));
+
+        Ok(builder)
+    }
+
+    /// Creates a new `GET` request builder with the `Authorization` header set
+    /// to an authorized admin access token.
+    async fn auth_get(
+        &self,
+        url: impl AsRef<str>,
+    ) -> Result<reqwest::RequestBuilder, FirebaseError> {
+        let access_token = self.get_access_token().await?;
+
+        let builder = self
+            .client
+            .get(url.as_ref())
             .header("Authorization", format!("Bearer {access_token}"));
 
         Ok(builder)
@@ -304,6 +338,74 @@ impl FirebaseAuthClient {
         let user = res_body.users.and_then(|mut users| users.pop());
 
         Ok(user)
+    }
+
+    #[tracing::instrument(name = "Get all users", skip_all)]
+    pub async fn get_all_users(&self) -> Result<Vec<User>, FirebaseError> {
+        let base_url = self.project_url("/accounts:batchGet");
+
+        fn make_pagination_url(
+            base_url: &str,
+            max_results: usize,
+            next_page_token: Option<&str>,
+        ) -> String {
+            format!(
+                "{base_url}?maxResults={max_results}{}",
+                next_page_token
+                    .map(|token| format!("&nextPageToken={token}"))
+                    .unwrap_or_else(|| { "".to_string() })
+            )
+        }
+
+        // Potential future work: make the requests concurrently by using a binary search
+        // methodology. The "next page token" seems to be a user ID, but testing shows that
+        // the ID does not need to exist - the results are just users after that ID
+        // (lexicographically).
+        //
+        // So we could do something like:
+        //   - Two initial requests:
+        //      1) no token
+        //      2) a request with next page token `a` (halfway through the alphabet of upper +
+        //         lowercase letters)
+        // For example, find lower and upper bounds for user IDs and divide & conquer all
+        // subranges until they start overlapping.
+        //
+        // Keep "guessing" and combining results until we have all users. Would be slower
+        // for small sets, but for large sets of users it could cut down on the sequential
+        // requests significantly.
+
+        let mut all_users = Vec::new();
+        let mut next_page_token = None;
+        loop {
+            let url = make_pagination_url(&base_url, 1000, next_page_token.as_deref());
+
+            let res = self
+                .auth_get(url)
+                .await?
+                .header("Content-Type", "application/json")
+                .send()
+                .await
+                .context("Failed to send get all users request")?;
+
+            if !res.status().is_success() {
+                return Err(response_error("Failed to get all users", res).await);
+            }
+
+            let res_body: BatchGetResponse =
+                res.json().await.context("Failed to read response JSON")?;
+
+            if let Some(mut users) = res_body.users {
+                all_users.append(&mut users);
+            }
+
+            next_page_token = res_body.next_page_token.map(|t| t.to_string());
+
+            if next_page_token.is_none() {
+                break;
+            }
+        }
+
+        Ok(all_users)
     }
 
     /// Creates a new user in Firebase Auth using the email/password provider.
