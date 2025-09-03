@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use anyhow::Context;
 use reqwest::Response;
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
@@ -340,8 +342,30 @@ impl FirebaseAuthClient {
         Ok(user)
     }
 
+    /// Retrieve all users in Firebase Auth. By default, this will send multiple batch requests to
+    /// the Firebase Auth API sequentially until all users have been retrieved. If you have
+    /// thousands of users, this can take a while. See
+    /// [`get_all_users_concurrently`](Self::get_all_users_concurrently) if you want these requests
+    /// to be sent concurrently by `N` workers.
     #[tracing::instrument(name = "Get all users", skip_all)]
     pub async fn get_all_users(&self) -> Result<Vec<User>, FirebaseError> {
+        self.get_all_users_concurrently(1).await
+    }
+
+    /// Retrieve all users in Firebase Auth using `num_workers` concurrent workers. See
+    /// [`get_all_users`](Self::get_all_users) for more info.
+    ///
+    /// The number of workers should be between 1 and 62. If you pass a number outside
+    /// this range, it will be clamped.
+    ///
+    /// Keep in mind that, at the time of writing, the Identity Toolkit API limit is 500
+    /// requests/second per service account. This method will fire off multiple requests
+    /// simultaneously. See the up-to-date limits in the [official docs](https://firebase.google.com/docs/auth/limits).
+    #[tracing::instrument(name = "Get all users concurrently", skip_all)]
+    pub async fn get_all_users_concurrently(
+        &self,
+        num_workers: u8,
+    ) -> Result<Vec<User>, FirebaseError> {
         let base_url = self.project_url("/accounts:batchGet");
 
         fn make_pagination_url(
@@ -357,53 +381,86 @@ impl FirebaseAuthClient {
             )
         }
 
-        // Potential future work: make the requests concurrently by using a binary search
-        // methodology. The "next page token" seems to be a user ID, but testing shows that
-        // the ID does not need to exist - the results are just users after that ID
-        // (lexicographically).
-        //
-        // So we could do something like:
-        //   - Two initial requests:
-        //      1) no token
-        //      2) a request with next page token `a` (halfway through the alphabet of upper +
-        //         lowercase letters)
-        // For example, find lower and upper bounds for user IDs and divide & conquer all
-        // subranges until they start overlapping.
-        //
-        // Keep "guessing" and combining results until we have all users. Would be slower
-        // for small sets, but for large sets of users it could cut down on the sequential
-        // requests significantly.
+        let legal = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
+            .chars()
+            .collect::<Vec<_>>();
 
-        let mut all_users = Vec::new();
-        let mut next_page_token = None;
-        loop {
-            let url = make_pagination_url(&base_url, 1000, next_page_token.as_deref());
+        let num_workers = (num_workers as usize).clamp(1, legal.len());
 
-            let res = self
-                .auth_get(url)
-                .await?
-                .header("Content-Type", "application/json")
-                .send()
-                .await
-                .context("Failed to send get all users request")?;
+        let chunk_size = legal.len() / num_workers;
+        let mut ranges = Vec::new();
 
-            if !res.status().is_success() {
-                return Err(response_error("Failed to get all users", res).await);
+        for i in 0..num_workers {
+            let min = legal[i * chunk_size];
+            let max = if i < num_workers - 1 {
+                legal[(i + 1) * chunk_size]
+            } else {
+                (*legal.last().unwrap() as u8 + 1) as char
+            };
+
+            ranges.push((min, max));
+        }
+
+        async fn run_worker(
+            client: &FirebaseAuthClient,
+            range: (char, char),
+            base_url: &str,
+        ) -> Result<Vec<User>, FirebaseError> {
+            const MAX_RESULTS: usize = 1000;
+            let (min, max) = (range.0.to_string(), range.1.to_string());
+
+            let mut all_users = Vec::new();
+            let mut next_page_token = Some(min);
+            loop {
+                let url = make_pagination_url(base_url, MAX_RESULTS, next_page_token.as_deref());
+
+                let res = client
+                    .auth_get(url)
+                    .await?
+                    .header("Content-Type", "application/json")
+                    .send()
+                    .await
+                    .context("Failed to send get all users request")?;
+
+                if !res.status().is_success() {
+                    return Err(response_error("Failed to get all users", res).await);
+                }
+
+                let res_body: BatchGetResponse =
+                    res.json().await.context("Failed to read response JSON")?;
+
+                if let Some(mut users) = res_body.users {
+                    all_users.append(&mut users);
+                }
+
+                next_page_token = res_body.next_page_token.map(|t| t.to_string());
+
+                if next_page_token.is_none() || next_page_token.as_deref() >= Some(&max) {
+                    break;
+                }
             }
 
-            let res_body: BatchGetResponse =
-                res.json().await.context("Failed to read response JSON")?;
+            Ok(all_users)
+        }
 
-            if let Some(mut users) = res_body.users {
-                all_users.append(&mut users);
-            }
+        let futures = ranges
+            .into_iter()
+            .map(|range| run_worker(self, range, &base_url));
 
-            next_page_token = res_body.next_page_token.map(|t| t.to_string());
+        let worker_results = futures::future::try_join_all(futures).await?;
+        let mut deduped = HashMap::new();
 
-            if next_page_token.is_none() {
-                break;
+        for users in worker_results {
+            for user in users {
+                deduped.insert(user.uid.clone(), user);
             }
         }
+
+        let keys = deduped.keys().cloned().collect::<Vec<_>>();
+        let all_users = keys
+            .iter()
+            .map(|k| deduped.remove(k).unwrap())
+            .collect::<Vec<_>>();
 
         Ok(all_users)
     }
