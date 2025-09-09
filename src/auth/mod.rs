@@ -1,8 +1,17 @@
+use std::collections::HashMap;
+
 use anyhow::Context;
 use reqwest::Response;
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 
-use crate::{auth::error::AuthApiErrorResponse, error::FirebaseError, ServiceAccount};
+use crate::{
+    auth::{
+        error::AuthApiErrorResponse,
+        models::{BatchGetResponse, UpdateUserBody, UpdateUserValues},
+    },
+    error::FirebaseError,
+    ServiceAccount,
+};
 
 use self::{
     credential::{ApiAuthTokenManager, UserTokenManager},
@@ -19,6 +28,7 @@ pub struct FirebaseAuthClient {
     api_url: String,
     user_token_manager: UserTokenManager,
     api_auth_token_manager: ApiAuthTokenManager,
+    project_id: String,
 }
 
 impl FirebaseAuthClient {
@@ -29,6 +39,7 @@ impl FirebaseAuthClient {
             .context("Failed to create HTTP client")?;
 
         let credential_manager = ApiAuthTokenManager::new(service_account.clone());
+        let project_id = service_account.project_id.clone();
         let token_handler = UserTokenManager::new(service_account, client.clone());
 
         Ok(Self {
@@ -36,11 +47,34 @@ impl FirebaseAuthClient {
             client,
             api_url: "https://identitytoolkit.googleapis.com/v1".to_string(),
             api_auth_token_manager: credential_manager,
+            project_id,
         })
     }
 
     fn url(&self, path: impl AsRef<str>) -> String {
         format!("{}{}", self.api_url, path.as_ref())
+    }
+
+    fn project_url(&self, path: impl AsRef<str>) -> String {
+        format!(
+            "{}/projects/{}{}",
+            self.api_url,
+            &self.project_id,
+            path.as_ref()
+        )
+    }
+
+    async fn get_access_token(&self) -> Result<String, FirebaseError> {
+        let access_token = self
+            .api_auth_token_manager
+            .get_access_token()
+            .await
+            .map_err(|e| {
+                tracing::error!("Failed to get access token: {e}");
+                e
+            })?;
+
+        Ok(access_token)
     }
 
     /// Creates a new `POST` request builder with the `Authorization` header set
@@ -49,19 +83,28 @@ impl FirebaseAuthClient {
         &self,
         url: impl AsRef<str>,
     ) -> Result<reqwest::RequestBuilder, FirebaseError> {
-        let access_token = self
-            .api_auth_token_manager
-            .get_access_token()
-            .await
-            .map_err(|e| {
-                tracing::error!("Failed to get access token: {}", e);
-                e
-            })?;
+        let access_token = self.get_access_token().await?;
 
         let builder = self
             .client
             .post(url.as_ref())
-            .header("Authorization", format!("Bearer {}", access_token));
+            .header("Authorization", format!("Bearer {access_token}"));
+
+        Ok(builder)
+    }
+
+    /// Creates a new `GET` request builder with the `Authorization` header set
+    /// to an authorized admin access token.
+    async fn auth_get(
+        &self,
+        url: impl AsRef<str>,
+    ) -> Result<reqwest::RequestBuilder, FirebaseError> {
+        let access_token = self.get_access_token().await?;
+
+        let builder = self
+            .client
+            .get(url.as_ref())
+            .header("Authorization", format!("Bearer {access_token}"));
 
         Ok(builder)
     }
@@ -299,6 +342,125 @@ impl FirebaseAuthClient {
         Ok(user)
     }
 
+    /// Retrieve all users in Firebase Auth. By default, this will send multiple batch requests to
+    /// the Firebase Auth API sequentially until all users have been retrieved. If you have
+    /// thousands of users, this can take a while. See
+    /// [`get_all_users_concurrently`](Self::get_all_users_concurrently) if you want these requests
+    /// to be sent concurrently by `N` workers.
+    #[tracing::instrument(name = "Get all users", skip_all)]
+    pub async fn get_all_users(&self) -> Result<Vec<User>, FirebaseError> {
+        self.get_all_users_concurrently(1).await
+    }
+
+    /// Retrieve all users in Firebase Auth using `num_workers` concurrent workers. See
+    /// [`get_all_users`](Self::get_all_users) for more info.
+    ///
+    /// The number of workers should be between 1 and 62. If you pass a number outside
+    /// this range, it will be clamped.
+    ///
+    /// Keep in mind that, at the time of writing, the Identity Toolkit API limit is 500
+    /// requests/second per service account. This method will fire off multiple requests
+    /// simultaneously. See the up-to-date limits in the [official docs](https://firebase.google.com/docs/auth/limits).
+    #[tracing::instrument(name = "Get all users concurrently", skip_all)]
+    pub async fn get_all_users_concurrently(
+        &self,
+        num_workers: u8,
+    ) -> Result<Vec<User>, FirebaseError> {
+        let base_url = self.project_url("/accounts:batchGet");
+
+        fn make_pagination_url(
+            base_url: &str,
+            max_results: usize,
+            next_page_token: Option<&str>,
+        ) -> String {
+            format!(
+                "{base_url}?maxResults={max_results}{}",
+                next_page_token
+                    .map(|token| format!("&nextPageToken={token}"))
+                    .unwrap_or_else(|| { "".to_string() })
+            )
+        }
+
+        let legal = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
+            .chars()
+            .collect::<Vec<_>>();
+
+        let num_workers = (num_workers as usize).clamp(1, legal.len());
+
+        let chunk_size = legal.len() / num_workers;
+        let mut ranges = Vec::new();
+
+        for i in 0..num_workers {
+            let min = legal[i * chunk_size];
+            let max = if i < num_workers - 1 {
+                legal[(i + 1) * chunk_size]
+            } else {
+                (*legal.last().unwrap() as u8 + 1) as char
+            };
+
+            ranges.push((min, max));
+        }
+
+        async fn run_worker(
+            client: &FirebaseAuthClient,
+            range: (char, char),
+            base_url: &str,
+        ) -> Result<Vec<User>, FirebaseError> {
+            const MAX_RESULTS: usize = 1000;
+            let (min, max) = (range.0.to_string(), range.1.to_string());
+
+            let mut all_users = Vec::new();
+            let mut next_page_token = Some(min);
+            loop {
+                let url = make_pagination_url(base_url, MAX_RESULTS, next_page_token.as_deref());
+
+                let res = client
+                    .auth_get(url)
+                    .await?
+                    .header("Content-Type", "application/json")
+                    .send()
+                    .await
+                    .context("Failed to send get all users request")?;
+
+                if !res.status().is_success() {
+                    return Err(response_error("Failed to get all users", res).await);
+                }
+
+                let res_body: BatchGetResponse =
+                    res.json().await.context("Failed to read response JSON")?;
+
+                if let Some(mut users) = res_body.users {
+                    all_users.append(&mut users);
+                }
+
+                next_page_token = res_body.next_page_token.map(|t| t.to_string());
+
+                if next_page_token.is_none() || next_page_token.as_deref() >= Some(&max) {
+                    break;
+                }
+            }
+
+            Ok(all_users)
+        }
+
+        let futures = ranges
+            .into_iter()
+            .map(|range| run_worker(self, range, &base_url));
+
+        let worker_results = futures::future::try_join_all(futures).await?;
+
+        let mut deduped = HashMap::new();
+        for users in worker_results {
+            for user in users {
+                deduped.insert(user.uid.clone(), user);
+            }
+        }
+
+        let all_users = deduped.into_values().collect();
+
+        Ok(all_users)
+    }
+
     /// Creates a new user in Firebase Auth using the email/password provider.
     ///
     /// # Examples
@@ -367,6 +529,85 @@ impl FirebaseAuthClient {
         tracing::info!("Created user with id '{}'", &res_body.uid);
 
         Ok(res_body.uid)
+    }
+
+    /// Updates a user's attributes in Firebase Auth, such as email or display name.
+    ///
+    /// This function allows you to update specific fields of a user. Passing `None` for a field
+    /// will remove it. Only the provided fields will be modified; others remain unchanged.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # #[tokio::main]
+    /// # async fn main() -> Result<(), fireplace::error::FirebaseError> {
+    /// # let auth_client = fireplace::auth::test_helpers::initialise()?;
+    /// use fireplace::auth::models::{NewUser, UpdateUserValues};
+    /// use ulid::Ulid;
+    ///
+    /// let user_id = auth_client
+    ///     .create_user(NewUser {
+    ///         display_name: Some("Julius Caesar".to_string()),
+    ///         email: format!("caesar@rome{}.it", Ulid::new()),
+    ///         password: "venividivici".to_string(),
+    ///     })
+    ///     .await?;
+    ///
+    /// // Give a new value for the email
+    /// let new_email = format!("caesar@deceased{}.it", Ulid::new());
+    ///
+    /// // Pass `None` to delete a field
+    /// let new_display_name: Option<String> = None;
+    ///
+    /// let res = auth_client
+    ///     .update_user(
+    ///         &user_id,
+    ///         UpdateUserValues::new()
+    ///             .email(&new_email)
+    ///             .display_name(new_display_name),
+    ///     )
+    ///     .await?;
+    ///
+    /// assert_eq!(res.email, Some(new_email.to_lowercase()));
+    /// assert_eq!(res.display_name, None);
+    /// # Ok(())
+    /// # }
+    /// ```
+    #[tracing::instrument(name = "Update user", skip_all, fields(user_id = %user_id.as_ref()))]
+    pub async fn update_user(
+        &self,
+        user_id: impl AsRef<str>,
+        updated_values: UpdateUserValues,
+    ) -> Result<User, FirebaseError> {
+        let body_values = UpdateUserBody::from_values(user_id.as_ref(), updated_values);
+        let body =
+            serde_json::to_string(&body_values).context("Failed to serialize updated values")?;
+
+        let res = self
+            .auth_post(self.url("/accounts:update"))
+            .await?
+            .body(body)
+            .send()
+            .await
+            .context("Failed to send update user request")?;
+
+        if !res.status().is_success() {
+            let err = res
+                .json::<AuthApiErrorResponse>()
+                .await
+                .context("Failed to read error response JSON")?
+                .into();
+
+            tracing::error!("Failed to update user: {err}");
+
+            return Err(err);
+        }
+
+        let res_body: User = res.json().await.context("Failed to read response JSON")?;
+
+        tracing::info!("Updated user with id '{}'", &res_body.uid);
+
+        Ok(res_body)
     }
 
     /// Signs into Firebase with a custom generated token, which you can get

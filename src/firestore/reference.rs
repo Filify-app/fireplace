@@ -292,7 +292,7 @@ mod tests {
         }
 
         let res = serde_json::from_str::<Test>(r#"{"doc_ref": "planets"}"#);
-        assert!(res.is_err(), "expected error, got {:?}", res);
+        assert!(res.is_err(), "expected error, got {res:?}");
     }
 
     #[test]
@@ -315,6 +315,6 @@ mod tests {
         }
 
         let res = serde_json::from_str::<Test>(r#"{"col_ref": "planets/tatooine"}"#);
-        assert!(res.is_err(), "expected error, got {:?}", res);
+        assert!(res.is_err(), "expected error, got {res:?}");
     }
 }

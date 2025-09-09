@@ -2,9 +2,20 @@ use std::str::FromStr;
 
 use serde::{Deserialize, Deserializer, Serialize};
 
+mod update_user;
+
+pub use update_user::*;
+
 #[derive(Debug, Deserialize)]
 pub(crate) struct GetAccountInfoResponse {
     pub users: Option<Vec<User>>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct BatchGetResponse {
+    pub users: Option<Vec<User>>,
+    pub next_page_token: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]

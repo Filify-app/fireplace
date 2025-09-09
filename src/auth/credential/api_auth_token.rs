@@ -49,14 +49,10 @@ impl ApiAuthTokenManager {
         let jwt = self.create_auth_jwt()?;
 
         let post_data = format!(
-            "grant_type=urn%3Aietf%3Aparams%3Aoauth%3Agrant-type%3Ajwt-bearer&assertion={}",
-            jwt
+            "grant_type=urn%3Aietf%3Aparams%3Aoauth%3Agrant-type%3Ajwt-bearer&assertion={jwt}"
         );
 
-        let url = format!(
-            "https://{}{}",
-            GOOGLE_AUTH_TOKEN_HOST, GOOGLE_AUTH_TOKEN_PATH
-        );
+        let url = format!("https://{GOOGLE_AUTH_TOKEN_HOST}{GOOGLE_AUTH_TOKEN_PATH}");
 
         let res = self
             .http_client

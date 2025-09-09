@@ -94,7 +94,7 @@ fn create_auth_interceptor(mut token_provider: FirestoreTokenProvider) -> Interc
             .get_token()
             .map_err(|_| Status::unauthenticated("Could not get token from token provider"))?;
 
-        let bearer_token = format!("Bearer {}", token);
+        let bearer_token = format!("Bearer {token}");
         let mut header_value = MetadataValue::from_str(&bearer_token).map_err(|_| {
             Status::unauthenticated("Failed to construct metadata value for authorization token")
         })?;
@@ -910,7 +910,7 @@ impl FirestoreClient {
         &'a mut self,
         collection: &CollectionReference,
         filter: Filter<'a>,
-    ) -> Result<FirebaseStream<T, FirebaseError>, FirebaseError> {
+    ) -> Result<FirebaseStream<'a, T, FirebaseError>, FirebaseError> {
         let (parent, collection_name) = self.split_collection_parent_and_name(collection);
 
         self.query_internal(ApiQueryOptions {
@@ -1006,7 +1006,7 @@ impl FirestoreClient {
     async fn query_internal_with_metadata<'de, 'a, T: Deserialize<'de>>(
         &mut self,
         options: ApiQueryOptions<'a>,
-    ) -> Result<FirebaseStream<FirestoreDocument<T>, FirebaseError>, FirebaseError> {
+    ) -> Result<FirebaseStream<'_, FirestoreDocument<T>, FirebaseError>, FirebaseError> {
         let parent = options.parent.clone();
         let structured_query = self.structured_query_from_options(options)?;
 
@@ -1122,7 +1122,7 @@ impl FirestoreClient {
     pub async fn collection_group<'de, 'a, T: Deserialize<'de> + 'a>(
         &'a mut self,
         collection_name: impl Into<String>,
-    ) -> Result<FirebaseStream<T, FirebaseError>, FirebaseError> {
+    ) -> Result<FirebaseStream<'a, T, FirebaseError>, FirebaseError> {
         self.query_internal(ApiQueryOptions {
             parent: self.root_resource_path.clone(),
             collection_name: collection_name.into(),
@@ -1213,7 +1213,7 @@ impl FirestoreClient {
         &'a mut self,
         collection_name: impl Into<String>,
         filter: Filter<'a>,
-    ) -> Result<FirebaseStream<T, FirebaseError>, FirebaseError> {
+    ) -> Result<FirebaseStream<'a, T, FirebaseError>, FirebaseError> {
         self.query_internal(ApiQueryOptions {
             parent: self.root_resource_path.clone(),
             collection_name: collection_name.into(),
@@ -1302,7 +1302,7 @@ impl FirestoreClient {
         &mut self,
         collection_name: impl Into<String>,
         filter: Filter<'a>,
-    ) -> Result<FirebaseStream<FirestoreDocument<T>, FirebaseError>, FirebaseError> {
+    ) -> Result<FirebaseStream<'_, FirestoreDocument<T>, FirebaseError>, FirebaseError> {
         self.query_internal_with_metadata(ApiQueryOptions {
             parent: self.root_resource_path.clone(),
             collection_name: collection_name.into(),
@@ -1368,7 +1368,7 @@ impl FirestoreClient {
     pub async fn get_documents<'a, T: DeserializeOwned + Send + 'a>(
         &'a mut self,
         collection_ref: &CollectionReference,
-    ) -> Result<FirebaseStream<T, FirebaseError>, FirebaseError> {
+    ) -> Result<FirebaseStream<'a, T, FirebaseError>, FirebaseError> {
         let (parent, collection_name) = self.split_collection_parent_and_name(collection_ref);
 
         self.query_internal(ApiQueryOptions {
@@ -1385,7 +1385,7 @@ impl FirestoreClient {
     pub async fn run_query<'de, 'a, T: Deserialize<'de> + 'a>(
         &'a mut self,
         query: impl FirestoreQuery<'a>,
-    ) -> Result<FirebaseStream<T, FirebaseError>, FirebaseError> {
+    ) -> Result<FirebaseStream<'a, T, FirebaseError>, FirebaseError> {
         let options = ApiQueryOptions::from_query(self, query);
         self.query_internal(options).await
     }
@@ -1393,7 +1393,7 @@ impl FirestoreClient {
     pub async fn run_query_with_metadata<'de, 'a, T: Deserialize<'de> + 'a>(
         &'a mut self,
         query: impl FirestoreQuery<'a>,
-    ) -> Result<FirebaseStream<FirestoreDocument<T>, FirebaseError>, FirebaseError> {
+    ) -> Result<FirebaseStream<'a, FirestoreDocument<T>, FirebaseError>, FirebaseError> {
         let options = ApiQueryOptions::from_query(self, query);
         self.query_internal_with_metadata(options).await
     }
