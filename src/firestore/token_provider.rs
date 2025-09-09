@@ -1,8 +1,8 @@
 use anyhow::Context;
-use jsonwebtoken::{get_current_timestamp, Algorithm};
+use jsonwebtoken::{Algorithm, get_current_timestamp};
 use serde::Serialize;
 
-use crate::{error::FirebaseError, ServiceAccount};
+use crate::{ServiceAccount, error::FirebaseError};
 
 #[derive(Clone)]
 pub struct FirestoreTokenProvider {

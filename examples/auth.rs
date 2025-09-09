@@ -1,6 +1,6 @@
 use fireplace::{
-    auth::{models::NewUser, FirebaseAuthClient},
     ServiceAccount,
+    auth::{FirebaseAuthClient, models::NewUser},
 };
 
 #[tokio::main]

@@ -1,9 +1,9 @@
 use fireplace::{
+    ServiceAccount,
     firestore::{
         client::{FirestoreClient, FirestoreClientOptions},
         collection,
     },
-    ServiceAccount,
 };
 
 #[tokio::main]

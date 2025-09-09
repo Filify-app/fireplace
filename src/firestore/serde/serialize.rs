@@ -1,13 +1,13 @@
 use std::collections::HashMap;
 
-use firestore_grpc::v1::{value::ValueType, ArrayValue, Document, MapValue, Value};
+use firestore_grpc::v1::{ArrayValue, Document, MapValue, Value, value::ValueType};
 use prost_types::Timestamp;
 use serde::{
+    Serialize, Serializer,
     ser::{
         SerializeMap, SerializeSeq, SerializeStruct, SerializeStructVariant, SerializeTuple,
         SerializeTupleStruct, SerializeTupleVariant,
     },
-    Serialize, Serializer,
 };
 
 use crate::firestore::reference::{CollectionReference, DocumentReference};
@@ -638,7 +638,7 @@ impl<'a> SerializeTuple for TupleSerializer<'a> {
 mod tests {
     use std::collections::HashMap;
 
-    use firestore_grpc::v1::{value::ValueType, ArrayValue, Document, MapValue, Value};
+    use firestore_grpc::v1::{ArrayValue, Document, MapValue, Value, value::ValueType};
     use serde::Serialize;
 
     use crate::firestore::{

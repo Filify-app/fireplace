@@ -2,15 +2,15 @@ use std::collections::HashMap;
 
 use anyhow::Context;
 use reqwest::Response;
-use serde::{de::DeserializeOwned, Deserialize, Serialize};
+use serde::{Deserialize, Serialize, de::DeserializeOwned};
 
 use crate::{
+    ServiceAccount,
     auth::{
         error::AuthApiErrorResponse,
         models::{BatchGetResponse, UpdateUserBody, UpdateUserValues},
     },
     error::FirebaseError,
-    ServiceAccount,
 };
 
 use self::{

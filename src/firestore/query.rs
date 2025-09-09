@@ -15,13 +15,12 @@
 */
 
 use firestore_grpc::v1::{
-    structured_query::{
-        composite_filter::Operator as CompositeFilterOperator,
-        field_filter::Operator as FieldFilterOperator, filter::FilterType as GrpcFilterType,
-        CompositeFilter as GrpcCompositeFilter, FieldFilter as GrpcFieldFilter, FieldReference,
-        Filter as GrpcFilter,
-    },
     Value,
+    structured_query::{
+        CompositeFilter as GrpcCompositeFilter, FieldFilter as GrpcFieldFilter, FieldReference,
+        Filter as GrpcFilter, composite_filter::Operator as CompositeFilterOperator,
+        field_filter::Operator as FieldFilterOperator, filter::FilterType as GrpcFilterType,
+    },
 };
 use serde::Serialize;
 
@@ -170,8 +169,6 @@ impl<'a> Filter<'a> {
         check_against: impl QueryOperator<T> + 'a,
     ) -> Self {
         let other_field_filter = create_field_filter(field.into(), check_against);
-
-        
 
         match self {
             Filter::Composite(mut filters) => {

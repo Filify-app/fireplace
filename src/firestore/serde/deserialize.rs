@@ -1,10 +1,10 @@
-use std::collections::{hash_map, HashMap};
+use std::collections::{HashMap, hash_map};
 use std::vec;
 
 use firestore_grpc::v1::value::ValueType;
+use serde::Deserialize;
 use serde::de::{self, Visitor};
 use serde::de::{DeserializeSeed, MapAccess, SeqAccess};
-use serde::Deserialize;
 
 use super::Error;
 
@@ -387,7 +387,7 @@ impl<'de> SeqAccess<'de> for ArrayDeserializer {
 mod tests {
     use std::collections::HashMap;
 
-    use firestore_grpc::v1::{value::ValueType, ArrayValue, Document, MapValue, Value};
+    use firestore_grpc::v1::{ArrayValue, Document, MapValue, Value, value::ValueType};
     use prost_types::Timestamp;
     use serde::Deserialize;
 

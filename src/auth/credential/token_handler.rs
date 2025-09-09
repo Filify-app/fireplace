@@ -1,6 +1,6 @@
 use anyhow::Context;
-use jsonwebtoken::{get_current_timestamp, Algorithm, DecodingKey, Validation};
-use serde::{de::DeserializeOwned, Serialize};
+use jsonwebtoken::{Algorithm, DecodingKey, Validation, get_current_timestamp};
+use serde::{Serialize, de::DeserializeOwned};
 
 use super::public_keys::PublicKeys;
 

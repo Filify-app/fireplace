@@ -3,8 +3,8 @@ use std::env;
 use serde::Deserialize;
 
 use crate::{
-    firestore::{client::FirestoreClient, collection},
     ServiceAccount,
+    firestore::{client::FirestoreClient, collection},
 };
 
 use super::client::FirestoreClientOptions;

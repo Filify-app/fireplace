@@ -1,5 +1,5 @@
 use anyhow::Context;
-use jsonwebtoken::{get_current_timestamp, Algorithm, EncodingKey};
+use jsonwebtoken::{Algorithm, EncodingKey, get_current_timestamp};
 use serde::{Deserialize, Serialize};
 use tokio::sync::RwLock;
 

@@ -3,7 +3,7 @@ use std::fmt::Display;
 use std::future;
 use std::pin::Pin;
 
-use anyhow::{anyhow, Context};
+use anyhow::{Context, anyhow};
 use firestore_grpc::tonic;
 use firestore_grpc::v1::firestore_client::FirestoreClient as GrpcFirestoreClient;
 use firestore_grpc::v1::precondition::ConditionType;
@@ -12,14 +12,14 @@ use firestore_grpc::v1::structured_aggregation_query::aggregation;
 use firestore_grpc::v1::structured_query::CollectionSelector;
 use firestore_grpc::v1::value::ValueType;
 use firestore_grpc::v1::{
-    batch_get_documents_response, run_aggregation_query_request, structured_aggregation_query,
     BatchGetDocumentsRequest, CreateDocumentRequest, DeleteDocumentRequest, DocumentMask,
     Precondition, RunAggregationQueryRequest, RunQueryRequest, StructuredAggregationQuery,
-    StructuredQuery, UpdateDocumentRequest,
+    StructuredQuery, UpdateDocumentRequest, batch_get_documents_response,
+    run_aggregation_query_request, structured_aggregation_query,
 };
 use firestore_grpc::{
     tonic::{
-        codegen::InterceptedService, metadata::MetadataValue, transport::Channel, Request, Status,
+        Request, Status, codegen::InterceptedService, metadata::MetadataValue, transport::Channel,
     },
     v1::GetDocumentRequest,
 };
@@ -27,13 +27,13 @@ use futures::{Stream, StreamExt, TryStreamExt};
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 
+use crate::ServiceAccount;
 use crate::error::FirebaseError;
 use crate::firestore::serde::deserialize_firestore_document_fields;
-use crate::ServiceAccount;
 
-use super::query::{try_into_grpc_filter, ApiQueryOptions, Filter, FirestoreQuery};
+use super::query::{ApiQueryOptions, Filter, FirestoreQuery, try_into_grpc_filter};
 use super::reference::{CollectionReference, DocumentReference};
-use super::serde::{strip_reference_prefix, DocumentSerializer};
+use super::serde::{DocumentSerializer, strip_reference_prefix};
 use super::token_provider::FirestoreTokenProvider;
 
 mod options;
@@ -1523,7 +1523,7 @@ impl FirestoreClient {
                     ref v => {
                         return Err(FirebaseError::Other(anyhow::anyhow!(
                             "Unexpected value type for count: {v:?}"
-                        )))
+                        )));
                     }
                 };
 
@@ -1653,7 +1653,7 @@ impl FirestoreClient {
                 let doc = match batch_get_res.map_err(|e| anyhow!(e))? {
                     batch_get_documents_response::Result::Found(document) => document,
                     batch_get_documents_response::Result::Missing(doc_path) => {
-                        return Ok(Err(doc_path))
+                        return Ok(Err(doc_path));
                     }
                 };
 

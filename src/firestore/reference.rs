@@ -6,7 +6,7 @@ use std::{
 
 use anyhow::Context;
 use once_cell::sync::OnceCell;
-use serde::{ser::SerializeStruct, Deserialize, Deserializer, Serialize, Serializer};
+use serde::{Deserialize, Deserializer, Serialize, Serializer, ser::SerializeStruct};
 
 use super::query::{CollectionQuery, Filter};
 
