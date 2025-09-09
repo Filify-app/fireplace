@@ -829,8 +829,7 @@ impl FirestoreClient {
 
     /// Query a collection for documents that fulfill the given criteria.
     ///
-    /// Returns a [`Stream`](futures::stream::Stream) of query results,
-    /// allowing you to process results as they are coming in.
+    /// Returns a [`Stream`] of query results, allowing you to process results as they are coming in.
     ///
     /// # Examples
     ///
@@ -1546,6 +1545,81 @@ impl FirestoreClient {
     /// The returned stream will contain `Ok(FirestoreDocument<T>)` for each
     /// document that was found, and `Err(String)` for each document that was not
     /// found, with the string being the path of the missing document.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # #[tokio::main]
+    /// # async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    /// # use serde::{Serialize, Deserialize};
+    /// # use fireplace::firestore::collection;
+    /// # let mut client = fireplace::firestore::test_helpers::initialise().await.unwrap();
+    /// #
+    /// use futures::TryStreamExt;
+    ///
+    /// #[derive(Debug, Serialize, Deserialize, PartialEq)]
+    /// struct Movie {
+    ///     title: String,
+    ///     year: u32,
+    /// }
+    ///
+    /// let movies_collection = collection("movies");
+    ///
+    /// // Create some movies in the database
+    /// let movie1 = Movie {
+    ///     title: "The Matrix".to_string(),
+    ///     year: 1999,
+    /// };
+    /// let movie2 = Movie {
+    ///     title: "Inception".to_string(),
+    ///     year: 2010,
+    /// };
+    ///
+    /// client.set_document(&movies_collection.doc("matrix"), &movie1).await?;
+    /// client.set_document(&movies_collection.doc("inception"), &movie2).await?;
+    ///
+    /// // Batch fetch documents (order not guaranteed)
+    /// let doc_refs = [
+    ///     movies_collection.doc("matrix"),
+    ///     movies_collection.doc("inception"),
+    ///     movies_collection.doc("nonexistent"),
+    /// ];
+    ///
+    /// let mut found_movies = Vec::new();
+    /// let mut missing_paths = Vec::new();
+    ///
+    /// let mut stream = client
+    ///     .batch_get_documents::<Movie>(doc_refs.iter())
+    ///     .await?;
+    ///
+    /// // Process the stream results
+    /// while let Some(result) = stream.try_next().await? {
+    ///     match result {
+    ///         Ok(doc) => {
+    ///             // Document was found
+    ///             found_movies.push(doc.data);
+    ///         }
+    ///         Err(missing_path) => {
+    ///             // Document was not found
+    ///             missing_paths.push(missing_path);
+    ///         }
+    ///     }
+    /// }
+    ///
+    /// // We should have found 2 movies and 1 missing document
+    /// assert_eq!(found_movies.len(), 2);
+    /// assert_eq!(missing_paths.len(), 1);
+    ///
+    /// // Sort movies by title for predictable testing (since order isn't guaranteed)
+    /// found_movies.sort_by(|a, b| a.title.cmp(&b.title));
+    /// assert!(found_movies.contains(&movie2)); // Inception
+    /// assert!(found_movies.contains(&movie1)); // The Matrix
+    ///
+    /// // The missing document path should contain "nonexistent"
+    /// assert!(missing_paths[0].contains("nonexistent"));
+    /// # Ok(())
+    /// # }
+    /// ```
     pub async fn batch_get_documents<'de, 'a, T: Deserialize<'de>>(
         &'a mut self,
         documents: impl IntoIterator<Item = &'a DocumentReference>,
@@ -1606,6 +1680,63 @@ impl FirestoreClient {
     /// will fetch all the specified documents and return them in a `Vec` of
     /// `Option<T>`, where `None` indicates that the document at that index could
     /// not be found.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # #[tokio::main]
+    /// # async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    /// # use serde::{Serialize, Deserialize};
+    /// # use fireplace::firestore::collection;
+    /// # let mut client = fireplace::firestore::test_helpers::initialise().await.unwrap();
+    /// #
+    /// #[derive(Debug, Serialize, Deserialize, PartialEq)]
+    /// struct Book {
+    ///     title: String,
+    ///     author: String,
+    /// }
+    ///
+    /// let books_collection = collection("books");
+    ///
+    /// // Create some books in the database
+    /// let book1 = Book {
+    ///     title: "1984".to_string(),
+    ///     author: "George Orwell".to_string(),
+    /// };
+    /// let book2 = Book {
+    ///     title: "Pride and Prejudice".to_string(),
+    ///     author: "Jane Austen".to_string(),
+    /// };
+    /// let book3 = Book {
+    ///     title: "The Catcher in the Rye".to_string(),
+    ///     author: "J.D. Salinger".to_string(),
+    /// };
+    ///
+    /// client.set_document(&books_collection.doc("book1"), &book1).await?;
+    /// client.set_document(&books_collection.doc("book2"), &book2).await?;
+    /// client.set_document(&books_collection.doc("book3"), &book3).await?;
+    ///
+    /// // Batch fetch documents in a specific order
+    /// let doc_refs = [
+    ///     books_collection.doc("book2"), // Pride and Prejudice
+    ///     books_collection.doc("book1"), // 1984
+    ///     books_collection.doc("nonexistent"), // This doesn't exist
+    ///     books_collection.doc("book3"), // The Catcher in the Rye
+    /// ];
+    ///
+    /// let results = client
+    ///     .batch_get_documents_ordered::<Book>(&doc_refs)
+    ///     .await?;
+    ///
+    /// // Results are returned in the same order as requested
+    /// assert_eq!(results.len(), 4);
+    /// assert_eq!(results[0], Some(book2)); // Pride and Prejudice (first requested)
+    /// assert_eq!(results[1], Some(book1)); // 1984 (second requested)
+    /// assert_eq!(results[2], None);        // nonexistent (third requested, returns None)
+    /// assert_eq!(results[3], Some(book3)); // The Catcher in the Rye (fourth requested)
+    /// # Ok(())
+    /// # }
+    /// ```
     pub async fn batch_get_documents_ordered<'de, 'a, T: Deserialize<'de>>(
         &'a mut self,
         documents: &[DocumentReference],
