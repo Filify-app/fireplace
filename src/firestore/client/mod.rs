@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::fmt::Display;
 use std::future;
 use std::pin::Pin;
@@ -11,9 +12,10 @@ use firestore_grpc::v1::structured_aggregation_query::aggregation;
 use firestore_grpc::v1::structured_query::CollectionSelector;
 use firestore_grpc::v1::value::ValueType;
 use firestore_grpc::v1::{
-    run_aggregation_query_request, structured_aggregation_query, CreateDocumentRequest,
-    DeleteDocumentRequest, DocumentMask, Precondition, RunAggregationQueryRequest, RunQueryRequest,
-    StructuredAggregationQuery, StructuredQuery, UpdateDocumentRequest,
+    batch_get_documents_response, run_aggregation_query_request, structured_aggregation_query,
+    BatchGetDocumentsRequest, CreateDocumentRequest, DeleteDocumentRequest, DocumentMask,
+    Precondition, RunAggregationQueryRequest, RunQueryRequest, StructuredAggregationQuery,
+    StructuredQuery, UpdateDocumentRequest,
 };
 use firestore_grpc::{
     tonic::{
@@ -48,6 +50,7 @@ pub struct FirestoreClient {
     grpc_channel: Channel,
     project_id: String,
     token_provider: FirestoreTokenProvider,
+    database_path: String,
     root_resource_path: String,
 }
 
@@ -140,14 +143,16 @@ impl FirestoreClient {
             create_auth_interceptor(token_provider.clone()),
         );
 
-        let resource_path = format!("projects/{project_id}/databases/(default)/documents");
+        let database_path = format!("projects/{project_id}/databases/(default)");
+        let root_resource_path = format!("{database_path}/documents");
 
         Self {
             client: service,
             project_id: project_id.to_string(),
             token_provider,
             grpc_channel: channel,
-            root_resource_path: resource_path,
+            database_path,
+            root_resource_path,
             options,
         }
     }
@@ -824,8 +829,7 @@ impl FirestoreClient {
 
     /// Query a collection for documents that fulfill the given criteria.
     ///
-    /// Returns a [`Stream`](futures::stream::Stream) of query results,
-    /// allowing you to process results as they are coming in.
+    /// Returns a [`Stream`] of query results, allowing you to process results as they are coming in.
     ///
     /// # Examples
     ///
@@ -1530,6 +1534,239 @@ impl FirestoreClient {
             .context("No count returned from aggregation query")??;
 
         Ok(count)
+    }
+
+    /// Fetches all documents from the given iterator of document references.
+    ///
+    /// Documents are not guaranteed to be returned in the same order as they
+    /// were given in the iterator. If you need that guarantee, use
+    /// [`batch_get_documents_ordered`](Self::batch_get_documents_ordered).
+    ///
+    /// The returned stream will contain `Ok(FirestoreDocument<T>)` for each
+    /// document that was found, and `Err(String)` for each document that was not
+    /// found, with the string being the path of the missing document.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # #[tokio::main]
+    /// # async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    /// # use serde::{Serialize, Deserialize};
+    /// # use fireplace::firestore::collection;
+    /// # let mut client = fireplace::firestore::test_helpers::initialise().await.unwrap();
+    /// #
+    /// use futures::TryStreamExt;
+    ///
+    /// #[derive(Debug, Serialize, Deserialize, PartialEq)]
+    /// struct Movie {
+    ///     title: String,
+    ///     year: u32,
+    /// }
+    ///
+    /// let movies_collection = collection("movies");
+    ///
+    /// // Create some movies in the database
+    /// let movie1 = Movie {
+    ///     title: "The Matrix".to_string(),
+    ///     year: 1999,
+    /// };
+    /// let movie2 = Movie {
+    ///     title: "Inception".to_string(),
+    ///     year: 2010,
+    /// };
+    ///
+    /// client.set_document(&movies_collection.doc("matrix"), &movie1).await?;
+    /// client.set_document(&movies_collection.doc("inception"), &movie2).await?;
+    ///
+    /// // Batch fetch documents (order not guaranteed)
+    /// let doc_refs = [
+    ///     movies_collection.doc("matrix"),
+    ///     movies_collection.doc("inception"),
+    ///     movies_collection.doc("nonexistent"),
+    /// ];
+    ///
+    /// let mut found_movies = Vec::new();
+    /// let mut missing_paths = Vec::new();
+    ///
+    /// let mut stream = client
+    ///     .batch_get_documents::<Movie>(doc_refs.iter())
+    ///     .await?;
+    ///
+    /// // Process the stream results
+    /// while let Some(result) = stream.try_next().await? {
+    ///     match result {
+    ///         Ok(doc) => {
+    ///             // Document was found
+    ///             found_movies.push(doc.data);
+    ///         }
+    ///         Err(missing_path) => {
+    ///             // Document was not found
+    ///             missing_paths.push(missing_path);
+    ///         }
+    ///     }
+    /// }
+    ///
+    /// // We should have found 2 movies and 1 missing document
+    /// assert_eq!(found_movies.len(), 2);
+    /// assert_eq!(missing_paths.len(), 1);
+    ///
+    /// // Sort movies by title for predictable testing (since order isn't guaranteed)
+    /// found_movies.sort_by(|a, b| a.title.cmp(&b.title));
+    /// assert!(found_movies.contains(&movie2)); // Inception
+    /// assert!(found_movies.contains(&movie1)); // The Matrix
+    ///
+    /// // The missing document path should contain "nonexistent"
+    /// assert!(missing_paths[0].contains("nonexistent"));
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub async fn batch_get_documents<'de, 'a, T: Deserialize<'de>>(
+        &'a mut self,
+        documents: impl IntoIterator<Item = &'a DocumentReference>,
+    ) -> Result<
+        FirebaseStream<'a, Result<FirestoreDocument<T>, String>, FirebaseError>,
+        FirebaseError,
+    > {
+        let doc_refs = documents
+            .into_iter()
+            .map(|doc_ref| self.get_name_with(doc_ref))
+            .collect::<Vec<_>>();
+
+        let res = self
+            .client
+            .batch_get_documents(BatchGetDocumentsRequest {
+                database: self.database_path.clone(),
+                documents: doc_refs,
+                mask: None,
+                consistency_selector: None,
+            })
+            .await
+            .context("Failed to run batch get documents request")?;
+
+        let doc_stream = res
+            .into_inner()
+            // Some of the "results" coming from the gRPC stream don't represent
+            // search hits but rather information about "the transaction". We just
+            // ignore those items.
+            .filter_map(|res| future::ready(res.map(|inner| inner.result).transpose()))
+            .map(|batch_get_res| {
+                let doc = match batch_get_res.map_err(|e| anyhow!(e))? {
+                    batch_get_documents_response::Result::Found(document) => document,
+                    batch_get_documents_response::Result::Missing(doc_path) => {
+                        return Ok(Err(doc_path))
+                    }
+                };
+
+                let deserialised = FirestoreDocument {
+                    data: deserialize_firestore_document_fields::<T>(doc.fields)
+                        .map_err(|e| serde_err_with_doc(e, &doc.name))?,
+                    id: doc.name,
+                    create_time: doc.create_time.map(|t| t.seconds),
+                    update_time: doc.update_time.map(|t| t.seconds),
+                };
+
+                Ok(Ok(deserialised))
+            });
+
+        Ok(doc_stream.boxed())
+    }
+
+    /// Fetches all documents from the given slice of document references.
+    /// Just like [`batch_get_documents`](Self::batch_get_documents), but returns
+    /// the documents in the same order as they were given.
+    ///
+    /// This has the downside of not being able to return a stream since the
+    /// Firestore API does not support ordering the results. Instead, this method
+    /// will fetch all the specified documents and return them in a `Vec` of
+    /// `Option<T>`, where `None` indicates that the document at that index could
+    /// not be found.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # #[tokio::main]
+    /// # async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    /// # use serde::{Serialize, Deserialize};
+    /// # use fireplace::firestore::collection;
+    /// # let mut client = fireplace::firestore::test_helpers::initialise().await.unwrap();
+    /// #
+    /// #[derive(Debug, Serialize, Deserialize, PartialEq)]
+    /// struct Book {
+    ///     title: String,
+    ///     author: String,
+    /// }
+    ///
+    /// let books_collection = collection("books");
+    ///
+    /// // Create some books in the database
+    /// let book1 = Book {
+    ///     title: "1984".to_string(),
+    ///     author: "George Orwell".to_string(),
+    /// };
+    /// let book2 = Book {
+    ///     title: "Pride and Prejudice".to_string(),
+    ///     author: "Jane Austen".to_string(),
+    /// };
+    /// let book3 = Book {
+    ///     title: "The Catcher in the Rye".to_string(),
+    ///     author: "J.D. Salinger".to_string(),
+    /// };
+    ///
+    /// client.set_document(&books_collection.doc("book1"), &book1).await?;
+    /// client.set_document(&books_collection.doc("book2"), &book2).await?;
+    /// client.set_document(&books_collection.doc("book3"), &book3).await?;
+    ///
+    /// // Batch fetch documents in a specific order
+    /// let doc_refs = [
+    ///     books_collection.doc("book2"), // Pride and Prejudice
+    ///     books_collection.doc("book1"), // 1984
+    ///     books_collection.doc("nonexistent"), // This doesn't exist
+    ///     books_collection.doc("book3"), // The Catcher in the Rye
+    /// ];
+    ///
+    /// let results = client
+    ///     .batch_get_documents_ordered::<Book>(&doc_refs)
+    ///     .await?;
+    ///
+    /// // Results are returned in the same order as requested
+    /// assert_eq!(results.len(), 4);
+    /// assert_eq!(results[0], Some(book2)); // Pride and Prejudice (first requested)
+    /// assert_eq!(results[1], Some(book1)); // 1984 (second requested)
+    /// assert_eq!(results[2], None);        // nonexistent (third requested, returns None)
+    /// assert_eq!(results[3], Some(book3)); // The Catcher in the Rye (fourth requested)
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub async fn batch_get_documents_ordered<'de, 'a, T: Deserialize<'de>>(
+        &'a mut self,
+        documents: &[DocumentReference],
+    ) -> Result<Vec<Option<T>>, FirebaseError> {
+        let indices = documents
+            .iter()
+            .enumerate()
+            .map(|(i, doc_ref)| (self.get_name_with(doc_ref), i))
+            .collect::<HashMap<_, _>>();
+
+        let mut doc_stream = self.batch_get_documents(documents).await?;
+
+        // Cannot use vec![None; documents.len()] because it would require T: Clone
+        let mut results = Vec::new();
+        results.resize_with(documents.len(), || None);
+
+        while let Some(result) = doc_stream.try_next().await? {
+            let doc = match result {
+                Ok(doc) => doc,
+                Err(_) => continue,
+            };
+
+            let index = indices.get(&doc.id).with_context(|| {
+                format!("Firestore returned an unexpected document: {}", doc.id)
+            })?;
+
+            results[*index] = Some(doc.data);
+        }
+
+        Ok(results)
     }
 
     fn structured_query_from_options(
