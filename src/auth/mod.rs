@@ -68,7 +68,7 @@ impl FirebaseAuthClient {
         let builder = self
             .client
             .post(url.as_ref())
-            .header("Authorization", format!("Bearer {}", access_token));
+            .header("Authorization", format!("Bearer {access_token}"));
 
         Ok(builder)
     }

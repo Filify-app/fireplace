@@ -465,8 +465,7 @@ impl<'a> SerializeStruct for ReferenceTypeSerializer<'a> {
             })
             .ok_or_else(|| {
                 Error::Message(format!(
-                    "missing key {} on firestore reference value",
-                    REF_TYPE_RELATIVE_PATH_KEY
+                    "missing key {REF_TYPE_RELATIVE_PATH_KEY} on firestore reference value"
                 ))
             })
     }

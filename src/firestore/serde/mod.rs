@@ -40,7 +40,7 @@ impl fmt::Display for Error {
             Self::Message(msg) => formatter.write_str(msg),
             Self::Eof => formatter.write_str("end of content"),
             Self::MissingValueType => formatter.write_str("missing value type"),
-            Self::InvalidKey(item) => write!(formatter, "invalid key type: {:?}", item),
+            Self::InvalidKey(item) => write!(formatter, "invalid key type: {item:?}"),
             Self::InvalidDocument => {
                 formatter.write_str("invalid document; must be a map-like type")
             }
