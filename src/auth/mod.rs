@@ -448,19 +448,15 @@ impl FirebaseAuthClient {
             .map(|range| run_worker(self, range, &base_url));
 
         let worker_results = futures::future::try_join_all(futures).await?;
-        let mut deduped = HashMap::new();
 
+        let mut deduped = HashMap::new();
         for users in worker_results {
             for user in users {
                 deduped.insert(user.uid.clone(), user);
             }
         }
 
-        let keys = deduped.keys().cloned().collect::<Vec<_>>();
-        let all_users = keys
-            .iter()
-            .map(|k| deduped.remove(k).unwrap())
-            .collect::<Vec<_>>();
+        let all_users = deduped.into_values().collect();
 
         Ok(all_users)
     }
