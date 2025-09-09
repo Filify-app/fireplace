@@ -1549,8 +1549,10 @@ impl FirestoreClient {
     pub async fn batch_get_documents<'de, 'a, T: Deserialize<'de>>(
         &'a mut self,
         documents: impl IntoIterator<Item = &'a DocumentReference>,
-    ) -> Result<FirebaseStream<Result<FirestoreDocument<T>, String>, FirebaseError>, FirebaseError>
-    {
+    ) -> Result<
+        FirebaseStream<'a, Result<FirestoreDocument<T>, String>, FirebaseError>,
+        FirebaseError,
+    > {
         let doc_refs = documents
             .into_iter()
             .map(|doc_ref| self.get_name_with(doc_ref))
