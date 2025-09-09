@@ -171,15 +171,15 @@ impl<'a> Filter<'a> {
     ) -> Self {
         let other_field_filter = create_field_filter(field.into(), check_against);
 
-        let new_filter = match self {
+        
+
+        match self {
             Filter::Composite(mut filters) => {
                 filters.push(other_field_filter);
                 Filter::Composite(filters)
             }
             Filter::Single(filter) => Filter::Composite(vec![filter, other_field_filter]),
-        };
-
-        new_filter
+        }
     }
 
     pub fn combine(self, other: Self) -> Self {
