@@ -1001,7 +1001,7 @@ impl FirestoreClient {
     async fn query_internal_with_metadata<'de, 'a, T: Deserialize<'de>>(
         &mut self,
         options: ApiQueryOptions<'a>,
-    ) -> Result<FirebaseStream<FirestoreDocument<T>, FirebaseError>, FirebaseError> {
+    ) -> Result<FirebaseStream<'_, FirestoreDocument<T>, FirebaseError>, FirebaseError> {
         let parent = options.parent.clone();
         let structured_query = self.structured_query_from_options(options)?;
 
@@ -1297,7 +1297,7 @@ impl FirestoreClient {
         &mut self,
         collection_name: impl Into<String>,
         filter: Filter<'a>,
-    ) -> Result<FirebaseStream<FirestoreDocument<T>, FirebaseError>, FirebaseError> {
+    ) -> Result<FirebaseStream<'_, FirestoreDocument<T>, FirebaseError>, FirebaseError> {
         self.query_internal_with_metadata(ApiQueryOptions {
             parent: self.root_resource_path.clone(),
             collection_name: collection_name.into(),
