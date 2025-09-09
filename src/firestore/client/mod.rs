@@ -1013,6 +1013,7 @@ impl FirestoreClient {
             parent,
             query_type: Some(QueryType::StructuredQuery(structured_query)),
             consistency_selector: None,
+            explain_options: None,
         };
 
         let res = self
@@ -1500,6 +1501,7 @@ impl FirestoreClient {
                 ),
             ),
             consistency_selector: None,
+            explain_options: None,
         };
 
         let res = self
@@ -1790,6 +1792,7 @@ impl FirestoreClient {
             end_at: None,
             offset: options.offset.unwrap_or(0),
             limit: options.limit,
+            find_nearest: None,
         };
 
         Ok(structured_query)
