@@ -5,11 +5,6 @@ use std::pin::Pin;
 
 use anyhow::{Context, anyhow};
 use firestore_grpc::tonic;
-use firestore_grpc::v1::firestore_client::FirestoreClient as GrpcFirestoreClient;
-use firestore_grpc::v1::precondition::ConditionType;
-use firestore_grpc::v1::run_query_request::QueryType;
-use firestore_grpc::v1::structured_aggregation_query::aggregation;
-use firestore_grpc::v1::structured_query::CollectionSelector;
 use firestore_grpc::v1::value::ValueType;
 use firestore_grpc::v1::{
     BatchGetDocumentsRequest, CreateDocumentRequest, DeleteDocumentRequest, DocumentMask,
@@ -17,6 +12,13 @@ use firestore_grpc::v1::{
     StructuredQuery, UpdateDocumentRequest, batch_get_documents_response,
     run_aggregation_query_request, structured_aggregation_query,
 };
+use firestore_grpc::v1::{BatchWriteRequest, structured_query::CollectionSelector};
+use firestore_grpc::v1::{Write, run_query_request::QueryType};
+use firestore_grpc::v1::{
+    firestore_client::FirestoreClient as GrpcFirestoreClient, structured_query::Projection,
+};
+use firestore_grpc::v1::{precondition::ConditionType, structured_query::FieldReference};
+use firestore_grpc::v1::{structured_aggregation_query::aggregation, write::Operation};
 use firestore_grpc::{
     tonic::{
         Request, Status, codegen::InterceptedService, metadata::MetadataValue, transport::Channel,
@@ -825,6 +827,174 @@ impl FirestoreClient {
             .map_err(not_found_err())?;
 
         Ok(())
+    }
+
+    /// Recursively deletes a document and all its descendant documents from the database.
+    ///
+    /// Returns a vector of all document references that were deleted.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # #[tokio::main]
+    /// # async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    /// # use fireplace::firestore::collection;
+    /// # let mut client = fireplace::firestore::test_helpers::initialise().await.unwrap();
+    /// #
+    /// // Create a document
+    /// let startup_ref = collection("startups").doc("doomed-ventures");
+    /// client
+    ///     .set_document(&startup_ref, &serde_json::json!({ "name": "Doomed Ventures Inc", "status": "burning_cash" }))
+    ///     .await?;
+    ///
+    /// // Add some employees
+    /// let dev_ref = startup_ref.collection("employees").doc("steve");
+    /// client
+    ///     .set_document(&dev_ref, &serde_json::json!({ "name": "Steve", "role": "10x developer", "languages": ["Rust", "Go", "Assembly"] }))
+    ///     .await?;
+    ///
+    /// let pm_ref = startup_ref.collection("employees").doc("karen");
+    /// client
+    ///     .set_document(&pm_ref, &serde_json::json!({ "name": "Karen", "role": "Scrum Master Extraordinaire" }))
+    ///     .await?;
+    ///
+    /// // Recursively delete everything
+    /// let deleted_docs = client
+    ///     .delete_document_recursively(&startup_ref)
+    ///     .await?;
+    ///
+    /// // Verify that the digital cremation was successful
+    /// assert_eq!(deleted_docs.len(), 3);
+    ///
+    /// // The root document should be gone
+    /// assert_eq!(
+    ///     client.get_document::<serde_json::Value>(&startup_ref).await?,
+    ///     None
+    /// );
+    ///
+    /// // So should all the descendant documents
+    /// assert_eq!(
+    ///     client.get_document::<serde_json::Value>(&dev_ref).await?,
+    ///     None
+    /// );
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub async fn delete_document_recursively(
+        &mut self,
+        document: &DocumentReference,
+    ) -> Result<Vec<DocumentReference>, FirebaseError> {
+        let doc_name = self.get_name_with(document);
+
+        let descendants_stream = self
+            .get_all_descendants(document)
+            .await
+            .context("Failed to request descendant documents")?;
+
+        let mut docs_to_delete = descendants_stream
+            .try_fold(vec![doc_name], |mut acc, name| async move {
+                acc.push(name);
+                Ok(acc)
+            })
+            .await
+            .context("Failed to stream descendant documents")?;
+
+        let document_references = docs_to_delete
+            .iter()
+            .map(|name| {
+                DocumentReference::try_from(strip_reference_prefix(name))
+                    .with_context(|| anyhow!("Failed to parse document reference from name {name}"))
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+
+        const BATCH_SIZE: usize = 500;
+
+        while !docs_to_delete.is_empty() {
+            let batch_range = docs_to_delete.len().saturating_sub(BATCH_SIZE)..;
+
+            let batch_writes = docs_to_delete
+                .drain(batch_range)
+                .map(|name| Write {
+                    operation: Some(Operation::Delete(name)),
+                    update_mask: None,
+                    current_document: None,
+                    update_transforms: vec![],
+                })
+                .collect::<Vec<_>>();
+
+            let request = BatchWriteRequest {
+                database: self.database_path.clone(),
+                writes: batch_writes,
+                labels: HashMap::new(),
+            };
+
+            self.client
+                .batch_write(request)
+                .await
+                .map_err(|e| anyhow!(e))?;
+        }
+
+        Ok(document_references)
+    }
+
+    /// Get a stream of all descendant documents of the given document.
+    ///
+    /// The returned strings are the full resource names of the documents.
+    ///
+    /// Based on https://github.com/googleapis/nodejs-firestore/blob/99918f1794adee706c4f2685cd3f8aea6dff895e/dev/src/recursive-delete.ts#L228
+    async fn get_all_descendants(
+        &mut self,
+        document: &DocumentReference,
+    ) -> Result<FirebaseStream<'_, String, FirebaseError>, FirebaseError> {
+        let parent = self.get_name_with(document);
+
+        let structured_query = StructuredQuery {
+            // We don't want document data to be returned, so just select the document ID
+            select: Some(Projection {
+                fields: vec![FieldReference {
+                    field_path: "__name__".to_string(),
+                }],
+            }),
+            from: vec![CollectionSelector {
+                // Must "remove" collection ID in order to select all descendant documents, which
+                // is an unintuitive hack, that I got from reading the Firestore Node.js SDK
+                // source. They use a custom notion of "kindless" queries, which removes the
+                // collection ID set by the getAllDescendants function linked above.
+                // Source: https://github.com/googleapis/nodejs-firestore/blob/99918f1794adee706c4f2685cd3f8aea6dff895e/dev/src/reference/query.ts#L1420-L1424
+                collection_id: "".to_string(),
+                all_descendants: true,
+            }],
+            r#where: None,
+            order_by: vec![],
+            start_at: None,
+            end_at: None,
+            offset: 0,
+            limit: Some(i32::MAX),
+            find_nearest: None,
+        };
+
+        let request = RunQueryRequest {
+            parent,
+            query_type: Some(QueryType::StructuredQuery(structured_query)),
+            consistency_selector: None,
+            explain_options: None,
+        };
+
+        let res = self
+            .client
+            .run_query(request)
+            .await
+            .map_err(|e| anyhow!(e))?;
+
+        let stream = res
+            .into_inner()
+            .filter_map(|res| future::ready(res.map(|inner| inner.document).transpose()))
+            .map(|doc_res| {
+                let doc = doc_res.map_err(|e| anyhow!(e))?;
+                Ok(doc.name)
+            });
+
+        Ok(stream.boxed())
     }
 
     /// Query a collection for documents that fulfill the given criteria.
