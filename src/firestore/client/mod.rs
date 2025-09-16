@@ -1,10 +1,9 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fmt::Display;
 use std::future;
 use std::pin::Pin;
 
 use anyhow::{Context, anyhow};
-use firestore_grpc::tonic;
 use firestore_grpc::v1::firestore_client::FirestoreClient as GrpcFirestoreClient;
 use firestore_grpc::v1::precondition::ConditionType;
 use firestore_grpc::v1::run_query_request::QueryType;
@@ -17,6 +16,7 @@ use firestore_grpc::v1::{
     StructuredQuery, UpdateDocumentRequest, batch_get_documents_response,
     run_aggregation_query_request, structured_aggregation_query,
 };
+use firestore_grpc::{tonic, v1::ListDocumentsRequest};
 use firestore_grpc::{
     tonic::{
         Request, Status, codegen::InterceptedService, metadata::MetadataValue, transport::Channel,
@@ -825,6 +825,71 @@ impl FirestoreClient {
             .map_err(not_found_err())?;
 
         Ok(())
+    }
+
+    pub async fn delete_document_recursively(
+        &mut self,
+        document: &DocumentReference,
+    ) -> Result<Vec<DocumentReference>, FirebaseError> {
+        let docs_to_delete = self.list_documents_recursively(document).await?;
+
+        dbg!(&docs_to_delete);
+
+        todo!()
+    }
+
+    pub async fn list_documents_recursively(
+        &mut self,
+        document: &DocumentReference,
+    ) -> Result<Vec<DocumentReference>, FirebaseError> {
+        let parent = self.get_name_with(document);
+
+        async fn list_documents_of(
+            client: &mut FirestoreClient,
+            parent: String,
+        ) -> Result<impl IntoIterator<Item = firestore_grpc::v1::Document>, FirebaseError> {
+            let request = ListDocumentsRequest {
+                parent,
+                collection_id: String::new(),
+                page_size: i32::MAX,
+                page_token: String::new(),
+                order_by: String::new(),
+                consistency_selector: None,
+                show_missing: false,
+                mask: Some(DocumentMask {
+                    field_paths: vec![],
+                }),
+            };
+
+            let res = client
+                .client
+                .list_documents(request)
+                .await
+                .map_err(|e| anyhow!(e))?;
+
+            Ok(res.into_inner().documents)
+        }
+
+        let mut found = vec![parent];
+        let mut to_search_index = 0;
+
+        while let Some(current) = found.get(to_search_index) {
+            let children = list_documents_of(self, current.clone()).await?;
+
+            for child in children {
+                found.push(child.name);
+            }
+
+            to_search_index += 1;
+        }
+
+        let doc_refs = found
+            .into_iter()
+            .map(|s| DocumentReference::try_from(strip_reference_prefix(&s)))
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|e| anyhow!(e))?;
+
+        Ok(doc_refs)
     }
 
     /// Query a collection for documents that fulfill the given criteria.
