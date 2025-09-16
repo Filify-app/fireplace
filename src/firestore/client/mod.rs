@@ -829,6 +829,57 @@ impl FirestoreClient {
         Ok(())
     }
 
+    /// Recursively deletes a document and all its descendant documents from the database.
+    ///
+    /// Returns a vector of all document references that were deleted.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # #[tokio::main]
+    /// # async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    /// # use fireplace::firestore::collection;
+    /// # let mut client = fireplace::firestore::test_helpers::initialise().await.unwrap();
+    /// #
+    /// // Create a document
+    /// let startup_ref = collection("startups").doc("doomed-ventures");
+    /// client
+    ///     .set_document(&startup_ref, &serde_json::json!({ "name": "Doomed Ventures Inc", "status": "burning_cash" }))
+    ///     .await?;
+    ///
+    /// // Add some employees
+    /// let dev_ref = startup_ref.collection("employees").doc("steve");
+    /// client
+    ///     .set_document(&dev_ref, &serde_json::json!({ "name": "Steve", "role": "10x developer", "languages": ["Rust", "Go", "Assembly"] }))
+    ///     .await?;
+    ///
+    /// let pm_ref = startup_ref.collection("employees").doc("karen");
+    /// client
+    ///     .set_document(&pm_ref, &serde_json::json!({ "name": "Karen", "role": "Scrum Master Extraordinaire" }))
+    ///     .await?;
+    ///
+    /// // Recursively delete everything
+    /// let deleted_docs = client
+    ///     .delete_document_recursively(&startup_ref)
+    ///     .await?;
+    ///
+    /// // Verify that the digital cremation was successful
+    /// assert_eq!(deleted_docs.len(), 3);
+    ///
+    /// // The root document should be gone
+    /// assert_eq!(
+    ///     client.get_document::<serde_json::Value>(&startup_ref).await?,
+    ///     None
+    /// );
+    ///
+    /// // So should all the descendant documents
+    /// assert_eq!(
+    ///     client.get_document::<serde_json::Value>(&dev_ref).await?,
+    ///     None
+    /// );
+    /// # Ok(())
+    /// # }
+    /// ```
     pub async fn delete_document_recursively(
         &mut self,
         document: &DocumentReference,
