@@ -599,6 +599,15 @@ impl FirebaseAuthClient {
     /// // Verify the user is disabled
     /// let user = auth_client.get_user(&user_id).await?.unwrap();
     /// assert_eq!(user.disabled, Some(true));
+    ///
+    /// // Re-enable the user
+    /// auth_client
+    ///     .update_user(&user_id, UpdateUserValues::new().disabled(false))
+    ///     .await?;
+    ///
+    /// // Verify the user is enabled again
+    /// let user = auth_client.get_user(&user_id).await?.unwrap();
+    /// assert_eq!(user.disabled, Some(false));
     /// # Ok(())
     /// # }
     /// ```
