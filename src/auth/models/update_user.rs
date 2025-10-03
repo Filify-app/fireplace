@@ -53,7 +53,7 @@ pub(crate) struct UpdateUserBody<'a> {
     #[serde(skip_serializing_if = "Vec::is_empty")]
     delete_attribute: Vec<&'static str>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    disabled: Option<bool>,
+    disable_user: Option<bool>,
 }
 
 impl<'a> UpdateUserBody<'a> {
@@ -72,7 +72,11 @@ impl<'a> UpdateUserBody<'a> {
             email: values.email,
             password: values.password,
             delete_attribute,
-            disabled: values.disabled,
+            // The `disabled` field is internally renamed to `disableUser`. See the Firebase Node
+            // Admin SDK implementation for reference:
+            //   - https://github.com/firebase/firebase-admin-node/blob/137a0d9312b0b45b69f6a5111081420729d8eaeb/src/auth/auth-api-request.ts#L480-L486
+            //   - https://github.com/firebase/firebase-admin-node/blob/137a0d9312b0b45b69f6a5111081420729d8eaeb/src/auth/auth-api-request.ts#L1468-L1472
+            disable_user: values.disabled,
         }
     }
 }
