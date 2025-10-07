@@ -1,5 +1,12 @@
 //! # Firestore
 //!
+//! This module provides access to Firebase's Firestore database. For the complete API reference,
+//! see the [`FirestoreClient`] documentation.
+//!
+//! [`FirestoreClient`]: client::FirestoreClient
+//!
+//! ## Contents
+//!
 //! - [Initializing the client](#initializing-the-client)
 //! - [Query examples](#query-examples)
 //!    * [Setting the documents](#setting-the-documents)

@@ -1,3 +1,200 @@
+//! # Firebase Auth
+//!
+//! This module provides access to Firebase Authentication for user management and token operations.
+//! For the complete API reference, see the [`FirebaseAuthClient`] documentation.
+//!
+//! ## Overview
+//!
+//! Firebase Auth enables you to:
+//!
+//! - **Manage users**: Create, retrieve, update, and list user accounts
+//! - **Handle authentication**: Generate custom tokens and validate ID tokens
+//! - **Control access**: Set custom claims for role-based access control
+//!
+//! ## Contents
+//!
+//! - [Initializing the client](#initializing-the-client)
+//! - [User management](#user-management)
+//!   * [Creating users](#creating-users)
+//!   * [Retrieving users](#retrieving-users)
+//!   * [Updating users](#updating-users)
+//!   * [Listing all users](#listing-all-users)
+//! - [Token operations](#token-operations)
+//!   * [Creating custom tokens](#creating-custom-tokens)
+//!   * [Verifying ID tokens](#verifying-id-tokens)
+//! - [Custom claims](#custom-claims)
+//!
+//! ## Initializing the client
+//!
+//! Create a [`FirebaseAuthClient`] using a Firebase service account:
+//!
+//! ```no_run
+//! use fireplace::{ServiceAccount, auth::FirebaseAuthClient};
+//!
+//! let service_account = ServiceAccount::from_file("./service-account.json").unwrap();
+//! let auth_client = FirebaseAuthClient::new(service_account).unwrap();
+//! ```
+//!
+//! ## User management
+//!
+//! ### Creating users
+//!
+//! Create new users with email and password authentication:
+//!
+//! ```no_run
+//! # #[tokio::main]
+//! # async fn main() -> Result<(), fireplace::error::FirebaseError> {
+//! # let auth_client = fireplace::auth::test_helpers::initialise()?;
+//! use fireplace::auth::models::NewUser;
+//!
+//! let user_id = auth_client.create_user(NewUser {
+//!     email: "user@example.com".to_string(),
+//!     password: "secure_password".to_string(),
+//!     display_name: Some("John Doe".to_string()),
+//! }).await?;
+//!
+//! println!("Created user: {}", user_id);
+//! # Ok(())
+//! # }
+//! ```
+//!
+//! See [`FirebaseAuthClient::create_user`] for more details.
+//!
+//! ### Retrieving users
+//!
+//! Fetch user information by their user ID:
+//!
+//! ```no_run
+//! # #[tokio::main]
+//! # async fn main() -> Result<(), fireplace::error::FirebaseError> {
+//! # let auth_client = fireplace::auth::test_helpers::initialise()?;
+//! if let Some(user) = auth_client.get_user("user_id_here").await? {
+//!     println!("User email: {:?}", user.email);
+//!     println!("Display name: {:?}", user.display_name);
+//! }
+//! # Ok(())
+//! # }
+//! ```
+//!
+//! See [`FirebaseAuthClient::get_user`] for more details.
+//!
+//! ### Updating users
+//!
+//! Update user attributes like email, display name, or password:
+//!
+//! ```no_run
+//! # #[tokio::main]
+//! # async fn main() -> Result<(), fireplace::error::FirebaseError> {
+//! # let auth_client = fireplace::auth::test_helpers::initialise()?;
+//! use fireplace::auth::models::UpdateUserValues;
+//!
+//! auth_client.update_user(
+//!     "user_id_here",
+//!     UpdateUserValues::new()
+//!         .display_name(Some("Jane Doe".to_string()))
+//!         .disabled(false)
+//! ).await?;
+//! # Ok(())
+//! # }
+//! ```
+//!
+//! See [`FirebaseAuthClient::update_user`] for more details.
+//!
+//! ### Listing all users
+//!
+//! Retrieve all users in your Firebase project:
+//!
+//! ```no_run
+//! # #[tokio::main]
+//! # async fn main() -> Result<(), fireplace::error::FirebaseError> {
+//! # let auth_client = fireplace::auth::test_helpers::initialise()?;
+//! let all_users = auth_client.get_all_users().await?;
+//! println!("Total users: {}", all_users.len());
+//! # Ok(())
+//! # }
+//! ```
+//!
+//! For better performance with large user bases, use concurrent fetching:
+//!
+//! ```no_run
+//! # #[tokio::main]
+//! # async fn main() -> Result<(), fireplace::error::FirebaseError> {
+//! # let auth_client = fireplace::auth::test_helpers::initialise()?;
+//! // Use 4 concurrent workers
+//! let all_users = auth_client.get_all_users_concurrently(4).await?;
+//! # Ok(())
+//! # }
+//! ```
+//!
+//! See [`FirebaseAuthClient::get_all_users`] and [`FirebaseAuthClient::get_all_users_concurrently`].
+//!
+//! ## Token operations
+//!
+//! ### Creating custom tokens
+//!
+//! Generate custom tokens that users can exchange for ID tokens:
+//!
+//! ```no_run
+//! # #[tokio::main]
+//! # async fn main() -> Result<(), fireplace::error::FirebaseError> {
+//! # let auth_client = fireplace::auth::test_helpers::initialise()?;
+//! let custom_token = auth_client.create_custom_token("user_id_here").await?;
+//! // Send this token to the client to sign in
+//! # Ok(())
+//! # }
+//! ```
+//!
+//! See [`FirebaseAuthClient::create_custom_token`] for more details.
+//!
+//! ### Verifying ID tokens
+//!
+//! Validate ID tokens from authenticated users:
+//!
+//! ```no_run
+//! # #[tokio::main]
+//! # async fn main() -> Result<(), fireplace::error::FirebaseError> {
+//! # let auth_client = fireplace::auth::test_helpers::initialise()?;
+//! let claims = auth_client
+//!     .decode_id_token::<serde_json::Value>("id_token_here")
+//!     .await?;
+//!
+//! let user_id = claims["user_id"].as_str().unwrap();
+//! # Ok(())
+//! # }
+//! ```
+//!
+//! See [`FirebaseAuthClient::decode_id_token`] for more details.
+//!
+//! ## Custom claims
+//!
+//! Set custom attributes on users for role-based access control:
+//!
+//! ```no_run
+//! # #[tokio::main]
+//! # async fn main() -> Result<(), fireplace::error::FirebaseError> {
+//! # let auth_client = fireplace::auth::test_helpers::initialise()?;
+//! use serde::Serialize;
+//!
+//! #[derive(Serialize)]
+//! struct CustomClaims {
+//!     role: String,
+//!     admin: bool,
+//! }
+//!
+//! auth_client.set_custom_user_claims(
+//!     "user_id_here",
+//!     CustomClaims {
+//!         role: "moderator".to_string(),
+//!         admin: false,
+//!     }
+//! ).await?;
+//! # Ok(())
+//! # }
+//! ```
+//!
+//! These claims will appear in the user's ID token after they re-authenticate.
+//! See [`FirebaseAuthClient::set_custom_user_claims`] for more details.
+
 use std::collections::HashMap;
 
 use anyhow::Context;

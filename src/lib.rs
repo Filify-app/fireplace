@@ -1,11 +1,23 @@
 //! # Fireplace
 //!
-//! Fireplace is a client for Firebase that seeks to provide a user-friendly
-//! interface to interact with Firestore, Firebase Auth, and similar.
+//! Fireplace is a Rust client library for Firebase's Admin SDK, providing ergouomic access to:
 //!
-//! ## Firestore usage
+//! - **Firestore**: Document database operations including CRUD, queries, and more
+//! - **Firebase Auth**: User management, authentication, token verification, and more
 //!
-//! See the [`firestore`] module for more information.
+//! ## Firestore
+//!
+//! Firestore provides a NoSQL document database with querying capabilities. See the [`firestore`]
+//! module for comprehensive examples and the [`FirestoreClient`] for the complete API reference.
+//!
+//! [`FirestoreClient`]: firestore::client::FirestoreClient
+//!
+//! ## Firebase Auth
+//!
+//! Firebase Auth provides user authentication and management capabilities.
+//! See the [`auth`] module and [`FirebaseAuthClient`] for detailed documentation.
+//!
+//! [`FirebaseAuthClient`]: auth::FirebaseAuthClient
 
 pub mod auth;
 pub mod error;

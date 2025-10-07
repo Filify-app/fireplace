@@ -11,9 +11,21 @@ This is a home-made client for Firebase's Admin SDK that seeks to provide a user
 
 To verify ID tokens for Firebase Auth, OpenSSL is required. For installation, see the [`openssl` crate's documentation](https://docs.rs/openssl/latest/openssl/index.html).
 
+## Documentation
+
+Complete API documentation with examples is available on [docs.rs](https://docs.rs/fireplace).
+
+Key documentation pages:
+
+- **[Crate overview](https://docs.rs/fireplace)** - Getting started guide with examples for both Firestore and Firebase Auth
+- **[Firestore module](https://docs.rs/fireplace/latest/fireplace/firestore/)** - Firestore usage guide including queries, filters, and pagination
+- **[FirestoreClient](https://docs.rs/fireplace/latest/fireplace/firestore/client/struct.FirestoreClient.html)** - Complete Firestore API reference
+- **[Firebase Auth module](https://docs.rs/fireplace/latest/fireplace/auth/)** - User management and authentication guide
+- **[FirebaseAuthClient](https://docs.rs/fireplace/latest/fireplace/auth/struct.FirebaseAuthClient.html)** - Complete Auth API reference
+
 ## Examples
 
-Check out the `examples` directory or view the crate documentation on [docs.rs](https://docs.rs/fireplace), which includes many examples. Test-run the hello-world example with:
+Check out the `examples` directory, which includes working code samples. Test-run the hello-world example with:
 
 ```
 cargo run --example hello
