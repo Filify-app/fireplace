@@ -573,6 +573,44 @@ impl FirebaseAuthClient {
     /// # Ok(())
     /// # }
     /// ```
+    ///
+    /// Disable a user:
+    ///
+    /// ```
+    /// # #[tokio::main]
+    /// # async fn main() -> Result<(), fireplace::error::FirebaseError> {
+    /// # let auth_client = fireplace::auth::test_helpers::initialise()?;
+    /// use fireplace::auth::models::{NewUser, UpdateUserValues};
+    /// use ulid::Ulid;
+    ///
+    /// let user_id = auth_client
+    ///     .create_user(NewUser {
+    ///         display_name: Some("Test User".to_string()),
+    ///         email: format!("{}@example.com", Ulid::new()),
+    ///         password: Ulid::new().to_string(),
+    ///     })
+    ///     .await?;
+    ///
+    /// // Disable the user
+    /// auth_client
+    ///     .update_user(&user_id, UpdateUserValues::new().disabled(true))
+    ///     .await?;
+    ///
+    /// // Verify the user is disabled
+    /// let user = auth_client.get_user(&user_id).await?.unwrap();
+    /// assert_eq!(user.disabled, Some(true));
+    ///
+    /// // Re-enable the user
+    /// auth_client
+    ///     .update_user(&user_id, UpdateUserValues::new().disabled(false))
+    ///     .await?;
+    ///
+    /// // Verify the user is enabled again
+    /// let user = auth_client.get_user(&user_id).await?.unwrap();
+    /// assert_eq!(user.disabled, Some(false));
+    /// # Ok(())
+    /// # }
+    /// ```
     #[tracing::instrument(name = "Update user", skip_all, fields(user_id = %user_id.as_ref()))]
     pub async fn update_user(
         &self,
