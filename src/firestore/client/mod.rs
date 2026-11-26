@@ -90,6 +90,8 @@ impl<T> FirestoreDocument<T> {
     }
 }
 
+// tonic's interceptor signature fixes the error type, however large `Status` is.
+#[allow(clippy::result_large_err)]
 fn create_auth_interceptor(mut token_provider: FirestoreTokenProvider) -> InterceptorFunction {
     Box::new(move |mut req: Request<()>| {
         let token = token_provider
@@ -115,14 +117,20 @@ impl FirestoreClient {
         service_account: ServiceAccount,
         options: FirestoreClientOptions,
     ) -> Result<Self, FirebaseError> {
+        let project_id = service_account.project_id.clone();
+        let token_provider = if options.emulator {
+            // Before anything is sent: emulator mode is for `demo-` projects only.
+            crate::emulator::ensure_demo_project(&project_id)?;
+            FirestoreTokenProvider::for_emulator(service_account)
+        } else {
+            FirestoreTokenProvider::new(service_account)
+        };
+
         let channel = Channel::from_shared(options.host_url.clone())
             .context("Failed to create gRPC channel")?
             .connect()
             .await
             .context("Failed to create channel to endpoint")?;
-
-        let project_id = service_account.project_id.clone();
-        let token_provider = FirestoreTokenProvider::new(service_account);
 
         Ok(Self::from_channel(
             channel,

@@ -9,7 +9,23 @@ use crate::{
 
 use super::client::FirestoreClientOptions;
 
+/// The client the tests and doc-tests of this crate use.
+///
+/// With `FIRESTORE_EMULATOR_HOST` set (as `firebase emulators:exec` sets it)
+/// the client talks to that Firestore emulator and needs no credentials.
+/// Otherwise it talks to the real project the `FIREBASE_*` variables name.
 pub async fn initialise() -> Result<FirestoreClient, anyhow::Error> {
+    if let Ok(emulator_host) = env::var("FIRESTORE_EMULATOR_HOST") {
+        let client_options = FirestoreClientOptions::default().emulator_host(emulator_host);
+        let client = FirestoreClient::initialise(
+            crate::emulator::service_account_for_tests(),
+            client_options,
+        )
+        .await?;
+
+        return Ok(client);
+    }
+
     let service_account = ServiceAccount {
         project_id: env::var("FIREBASE_PROJECT_ID")?,
         client_id: env::var("FIREBASE_CLIENT_ID")?,

@@ -3,7 +3,7 @@ use jsonwebtoken::{Algorithm, EncodingKey, get_current_timestamp};
 use serde::{Deserialize, Serialize};
 use tokio::sync::RwLock;
 
-use crate::ServiceAccount;
+use crate::{ServiceAccount, emulator::OWNER_TOKEN};
 
 const GOOGLE_TOKEN_AUDIENCE: &str = "https://accounts.google.com/o/oauth2/token";
 const GOOGLE_AUTH_TOKEN_HOST: &str = "accounts.google.com";
@@ -13,6 +13,9 @@ pub struct ApiAuthTokenManager {
     service_account: ServiceAccount,
     current_access_token: RwLock<Option<AccessToken>>,
     http_client: reqwest::Client,
+    /// Whether the token is for the Auth emulator, which takes `owner` as an
+    /// administrator's and knows nothing of Google's access tokens.
+    emulator: bool,
 }
 
 impl ApiAuthTokenManager {
@@ -21,10 +24,24 @@ impl ApiAuthTokenManager {
             service_account,
             current_access_token: RwLock::new(None),
             http_client: reqwest::Client::new(),
+            emulator: false,
+        }
+    }
+
+    /// A manager for the Auth emulator: every request goes out as the
+    /// emulator's administrator, and Google is never asked for a token.
+    pub fn for_emulator(service_account: ServiceAccount) -> Self {
+        Self {
+            emulator: true,
+            ..Self::new(service_account)
         }
     }
 
     pub async fn get_access_token(&self) -> anyhow::Result<String> {
+        if self.emulator {
+            return Ok(OWNER_TOKEN.to_string());
+        }
+
         match self.get_non_expired_token().await {
             Some(token) => Ok(token),
             None => {
