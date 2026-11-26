@@ -66,7 +66,41 @@ where
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct NewUser {
+    /// Left out of the request when `None`. Google reads a `null` as no name,
+    /// but the Auth emulator refuses a `displayName` that is not a string.
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub display_name: Option<String>,
     pub email: String,
     pub password: String,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::NewUser;
+
+    #[test]
+    fn a_new_user_without_a_display_name_sends_no_display_name() {
+        let unnamed = NewUser {
+            display_name: None,
+            email: "mario@example.com".to_string(),
+            password: "its-a-me".to_string(),
+        };
+        assert_eq!(
+            serde_json::to_value(&unnamed).unwrap(),
+            serde_json::json!({ "email": "mario@example.com", "password": "its-a-me" })
+        );
+
+        let named = NewUser {
+            display_name: Some("Mario".to_string()),
+            ..unnamed
+        };
+        assert_eq!(
+            serde_json::to_value(&named).unwrap(),
+            serde_json::json!({
+                "displayName": "Mario",
+                "email": "mario@example.com",
+                "password": "its-a-me",
+            })
+        );
+    }
 }

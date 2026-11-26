@@ -789,6 +789,17 @@ impl FirebaseAuthClient {
     ///     create_again_result,
     ///     Err(FirebaseError::EmailAlreadyExists)
     /// ));
+    ///
+    /// // A display name is optional
+    /// let unnamed_user = NewUser {
+    ///     display_name: None,
+    ///     email: format!("{}@example.com", Ulid::new()),
+    ///     password: Ulid::new().to_string(),
+    /// };
+    /// let unnamed_user_id = auth_client.create_user(unnamed_user).await?;
+    /// let unnamed_user = auth_client.get_user(&unnamed_user_id).await?.unwrap();
+    ///
+    /// assert_eq!(unnamed_user.display_name, None);
     /// # Ok(())
     /// # }
     /// ```
