@@ -379,10 +379,14 @@ impl FirebaseAuthClient {
     ) -> Result<reqwest::RequestBuilder, FirebaseError> {
         let access_token = self.get_access_token().await?;
 
+        // Every POST of this client carries a JSON body. Google reads it
+        // without the header; the Auth emulator does not parse a body it is
+        // not told is JSON, and answers 500 on the empty request it then sees.
         let builder = self
             .client
             .post(url.as_ref())
-            .header("Authorization", format!("Bearer {access_token}"));
+            .header("Authorization", format!("Bearer {access_token}"))
+            .header("Content-Type", "application/json");
 
         Ok(builder)
     }
