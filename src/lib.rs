@@ -20,6 +20,7 @@
 //! [`FirebaseAuthClient`]: auth::FirebaseAuthClient
 
 pub mod auth;
+mod emulator;
 pub mod error;
 pub mod firestore;
 mod service_account;

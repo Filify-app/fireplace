@@ -35,6 +35,42 @@
 //! let auth_client = FirebaseAuthClient::new(service_account).unwrap();
 //! ```
 //!
+//! ### Using the Auth emulator
+//!
+//! To talk to the Auth emulator of the [Firebase Local Emulator Suite]
+//! instead of Google, say so with [`FirebaseAuthClientOptions::emulator_host`]:
+//!
+//! ```no_run
+//! use fireplace::{
+//!     ServiceAccount,
+//!     auth::{FirebaseAuthClient, FirebaseAuthClientOptions},
+//! };
+//!
+//! // The emulators check no credentials, so only the project ID matters. It
+//! // has to start with `demo-`, the prefix Firebase reserves for projects
+//! // that exist only in the emulators.
+//! let service_account = ServiceAccount {
+//!     project_id: "demo-my-app".to_string(),
+//!     private_key: String::new(),
+//!     private_key_id: String::new(),
+//!     client_email: "emulator@example.com".to_string(),
+//!     client_id: "emulator".to_string(),
+//! };
+//!
+//! let options = FirebaseAuthClientOptions::default().emulator_host("127.0.0.1:9099");
+//! let auth_client = FirebaseAuthClient::with_options(service_account, options).unwrap();
+//! ```
+//!
+//! In emulator mode every request is sent as the emulator's administrator,
+//! Google is never contacted, custom tokens are created unsigned, and
+//! [`decode_id_token`](FirebaseAuthClient::decode_id_token) accepts the
+//! emulator's ID tokens, which carry no signature. Anyone can write such a
+//! token, which is why the mode is refused for any project that is not a
+//! `demo-` project, and why this crate never switches it on from an
+//! environment variable the way the official SDKs do.
+//!
+//! [Firebase Local Emulator Suite]: https://firebase.google.com/docs/emulator-suite
+//!
 //! ## User management
 //!
 //! ### Creating users
@@ -220,6 +256,30 @@ mod error;
 pub mod models;
 pub mod test_helpers;
 
+/// Options for a [`FirebaseAuthClient`]. The default talks to Google.
+#[derive(Clone, Debug, Default)]
+pub struct FirebaseAuthClientOptions {
+    /// The `host:port` of a Firebase Auth emulator to talk to instead of
+    /// Google, for example `127.0.0.1:9099`. See
+    /// [`emulator_host`](Self::emulator_host).
+    pub emulator_host: Option<String>,
+}
+
+impl FirebaseAuthClientOptions {
+    /// Talk to the Firebase Auth emulator at `host` (`host:port`, for example
+    /// `127.0.0.1:9099`) instead of Google.
+    ///
+    /// The emulator's ID tokens carry no signature, so in this mode
+    /// [`FirebaseAuthClient::decode_id_token`] accepts a token on its claims
+    /// alone. [`FirebaseAuthClient::with_options`] therefore refuses the mode
+    /// for any project whose ID does not start with `demo-`. See the
+    /// [module docs](self#using-the-auth-emulator).
+    pub fn emulator_host(mut self, host: impl Into<String>) -> Self {
+        self.emulator_host = Some(host.into());
+        self
+    }
+}
+
 pub struct FirebaseAuthClient {
     client: reqwest::Client,
     api_url: String,
@@ -230,19 +290,56 @@ pub struct FirebaseAuthClient {
 
 impl FirebaseAuthClient {
     pub fn new(service_account: ServiceAccount) -> Result<Self, FirebaseError> {
+        Self::with_options(service_account, FirebaseAuthClientOptions::default())
+    }
+
+    /// Creates a client with [`FirebaseAuthClientOptions`], which is how to
+    /// point it at the Auth emulator.
+    ///
+    /// Fails when emulator mode is asked for a project whose ID does not
+    /// start with `demo-`.
+    pub fn with_options(
+        service_account: ServiceAccount,
+        options: FirebaseAuthClientOptions,
+    ) -> Result<Self, FirebaseError> {
+        let Some(emulator_host) = options.emulator_host else {
+            let client = reqwest::Client::builder()
+                .https_only(true)
+                .build()
+                .context("Failed to create HTTP client")?;
+
+            let credential_manager = ApiAuthTokenManager::new(service_account.clone());
+            let project_id = service_account.project_id.clone();
+            let token_handler = UserTokenManager::new(service_account, client.clone());
+
+            return Ok(Self {
+                user_token_manager: token_handler,
+                client,
+                api_url: "https://identitytoolkit.googleapis.com/v1".to_string(),
+                api_auth_token_manager: credential_manager,
+                project_id,
+            });
+        };
+
+        crate::emulator::ensure_demo_project(&service_account.project_id)?;
+
+        // The emulator speaks plain HTTP, so no `https_only` here.
         let client = reqwest::Client::builder()
-            .https_only(true)
             .build()
             .context("Failed to create HTTP client")?;
 
-        let credential_manager = ApiAuthTokenManager::new(service_account.clone());
+        let credential_manager = ApiAuthTokenManager::for_emulator(service_account.clone());
         let project_id = service_account.project_id.clone();
-        let token_handler = UserTokenManager::new(service_account, client.clone());
+        let token_handler = UserTokenManager::for_emulator(service_account, client.clone());
 
         Ok(Self {
             user_token_manager: token_handler,
             client,
-            api_url: "https://identitytoolkit.googleapis.com/v1".to_string(),
+            // The emulator serves each Google API under its host name.
+            api_url: format!(
+                "http://{}/identitytoolkit.googleapis.com/v1",
+                crate::emulator::normalise_host(&emulator_host)
+            ),
             api_auth_token_manager: credential_manager,
             project_id,
         })
@@ -256,7 +353,7 @@ impl FirebaseAuthClient {
         format!(
             "{}/projects/{}{}",
             self.api_url,
-            &self.project_id,
+            self.project_id,
             path.as_ref()
         )
     }
@@ -282,10 +379,14 @@ impl FirebaseAuthClient {
     ) -> Result<reqwest::RequestBuilder, FirebaseError> {
         let access_token = self.get_access_token().await?;
 
+        // Every POST of this client carries a JSON body. Google reads it
+        // without the header; the Auth emulator does not parse a body it is
+        // not told is JSON, and answers 500 on the empty request it then sees.
         let builder = self
             .client
             .post(url.as_ref())
-            .header("Authorization", format!("Bearer {access_token}"));
+            .header("Authorization", format!("Bearer {access_token}"))
+            .header("Content-Type", "application/json");
 
         Ok(builder)
     }
@@ -688,6 +789,17 @@ impl FirebaseAuthClient {
     ///     create_again_result,
     ///     Err(FirebaseError::EmailAlreadyExists)
     /// ));
+    ///
+    /// // A display name is optional
+    /// let unnamed_user = NewUser {
+    ///     display_name: None,
+    ///     email: format!("{}@example.com", Ulid::new()),
+    ///     password: Ulid::new().to_string(),
+    /// };
+    /// let unnamed_user_id = auth_client.create_user(unnamed_user).await?;
+    /// let unnamed_user = auth_client.get_user(&unnamed_user_id).await?.unwrap();
+    ///
+    /// assert_eq!(unnamed_user.display_name, None);
     /// # Ok(())
     /// # }
     /// ```

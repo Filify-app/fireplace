@@ -2,12 +2,15 @@ use anyhow::Context;
 use jsonwebtoken::{Algorithm, get_current_timestamp};
 use serde::Serialize;
 
-use crate::{ServiceAccount, error::FirebaseError};
+use crate::{ServiceAccount, emulator::OWNER_TOKEN, error::FirebaseError};
 
 #[derive(Clone)]
 pub struct FirestoreTokenProvider {
     service_account: ServiceAccount,
     current_token: Option<Token>,
+    /// Whether the token is for the Firestore emulator, which takes `owner`
+    /// as an administrator's.
+    emulator: bool,
 }
 
 #[derive(Clone)]
@@ -23,10 +26,24 @@ impl FirestoreTokenProvider {
         Self {
             service_account,
             current_token: None,
+            emulator: false,
+        }
+    }
+
+    /// A provider for the Firestore emulator: no token is signed, so the
+    /// service account needs no private key.
+    pub fn for_emulator(service_account: ServiceAccount) -> Self {
+        Self {
+            emulator: true,
+            ..Self::new(service_account)
         }
     }
 
     pub fn get_token(&mut self) -> Result<String, FirebaseError> {
+        if self.emulator {
+            return Ok(OWNER_TOKEN.to_string());
+        }
+
         match &self.current_token {
             Some(token) if token.expires_at > get_current_timestamp() => Ok(token.jwt.clone()),
             _ => {

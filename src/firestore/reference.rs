@@ -96,16 +96,15 @@ impl TryFrom<String> for CollectionReference {
         let mut slash_sep = value.split('/');
         let first = slash_sep.next().context("empty collection reference")?;
         let remaining = slash_sep.collect::<Vec<_>>();
-        let mut parts = remaining.chunks_exact(2);
+        let (parts, remainder) = remaining.as_chunks::<2>();
 
         let mut col_ref = collection(first);
-        for part in parts.by_ref() {
-            let (doc_id, collection_id) = (part[0], part[1]);
-            col_ref = col_ref.doc(doc_id).collection(collection_id);
+        for [doc_id, collection_id] in parts {
+            col_ref = col_ref.doc(*doc_id).collection(*collection_id);
         }
 
         anyhow::ensure!(
-            parts.remainder().is_empty(),
+            remainder.is_empty(),
             "invalid amount of path segments in collection reference"
         );
 
@@ -162,19 +161,18 @@ impl TryFrom<String> for DocumentReference {
 
     fn try_from(value: String) -> Result<Self, Self::Error> {
         let slash_sep = value.split('/').collect::<Vec<_>>();
-        let mut parts = slash_sep.chunks_exact(2);
+        let (parts, remainder) = slash_sep.as_chunks::<2>();
 
         let mut doc_ref = None;
-        for part in parts.by_ref() {
-            let (collection_id, doc_id) = (part[0], part[1]);
+        for [collection_id, doc_id] in parts {
             doc_ref = match doc_ref {
-                None => Some(collection(collection_id).doc(doc_id)),
-                Some(parent) => Some(parent.collection(collection_id).doc(doc_id)),
+                None => Some(collection(*collection_id).doc(*doc_id)),
+                Some(parent) => Some(parent.collection(*collection_id).doc(*doc_id)),
             };
         }
 
         anyhow::ensure!(
-            parts.remainder().is_empty(),
+            remainder.is_empty(),
             "invalid amount of path segments in document reference"
         );
 
